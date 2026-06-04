@@ -134,22 +134,52 @@ button {
   overflow-y: auto;
 }
 
+.driver-layout--offer-open .map-container {
+  pointer-events: none;
+}
+
+.driver-layout--offer-open .map-overlay {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .modal {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  z-index: 2000;
+  z-index: 3000;
+  pointer-events: auto;
 }
 
 .modal-content {
   background: #fff;
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   padding: 1.5rem;
-  max-width: 420px;
-  width: 90%;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  max-width: 480px;
+  width: 100%;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.modal-actions .btn {
+  flex: 1;
+}
+
+.modal-error {
+  color: #dc2626;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
 }
 
 .badge {
