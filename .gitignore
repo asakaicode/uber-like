@@ -1,1 +1,10 @@
 .DS_Store
+node_modules
+dist
+.output
+.turbo
+.env
+.env.local
+*.log
+data/osrm
+.pnpm-store
