@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { gql, formatDistance, formatPrice, formatStatus, useInfiniteScroll, WS_URL, getToken } from "@uber-like/web";
+import { gql, formatDistance, formatPrice, formatStatus, useInfiniteScroll, WS_URL, getToken, classNames } from "@uber-like/web";
 import { createClient } from "graphql-ws";
 
 interface Offer {
@@ -19,6 +19,17 @@ interface Offer {
     restaurant: { name: string; lat: number; lng: number };
   };
 }
+
+const OFFER_FIELDS = `
+  id status expiresAt totalDistance estimatedMinutes reward
+  order { id deliveryLat deliveryLng restaurant { name lat lng } }
+`;
+
+const OFFERS_QUERY = `query PendingOffers($first: Int, $status: OfferStatus) {
+  myOffers(first: $first, status: $status) {
+    edges { node { ${OFFER_FIELDS} } }
+  }
+}`;
 
 interface ActiveDelivery {
   id: string;
@@ -55,7 +66,20 @@ export function DashboardPage() {
   const [pendingOffer, setPendingOffer] = useState<Offer | null>(null);
   const [activeDelivery, setActiveDelivery] = useState<ActiveDelivery | null>(null);
   const [route, setRoute] = useState<[number, number][]>([]);
+  const [responding, setResponding] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
   const watchId = useRef<number | null>(null);
+
+  async function loadPendingOffer() {
+    const data = await gql<{ myOffers: { edges: Array<{ node: Offer }> } }>(
+      OFFERS_QUERY,
+      { first: 1, status: "PENDING" },
+    );
+    const offer = data.myOffers.edges[0]?.node ?? null;
+    if (offer && new Date(offer.expiresAt) > new Date()) {
+      setPendingOffer(offer);
+    }
+  }
 
   const { data: offersData, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["myOffers"],
@@ -165,21 +189,38 @@ export function DashboardPage() {
     const next = !isOnline;
     await gql(`mutation($isOnline: Boolean!) { setDriverOnline(isOnline: $isOnline) { id } }`, { isOnline: next });
     setIsOnline(next);
+    if (next) {
+      await loadPendingOffer().catch(console.error);
+    } else {
+      setPendingOffer(null);
+    }
   }
 
   async function respondToOffer(accept: boolean) {
-    if (!pendingOffer) return;
-    await gql(
-      `mutation($offerId: ID!, $accept: Boolean!) { respondToOffer(offerId: $offerId, accept: $accept) { id status } }`,
-      { offerId: pendingOffer.id, accept },
-    );
-    if (accept) {
-      const data = await gql<{ myActiveDelivery: ActiveDelivery | null }>(
-        `query { myActiveDelivery { id status order { id status deliveryLat deliveryLng restaurant { name lat lng } } } }`,
+    if (!pendingOffer || responding) return;
+    setResponding(true);
+    setOfferError(null);
+    try {
+      await gql(
+        `mutation($offerId: ID!, $accept: Boolean!) { respondToOffer(offerId: $offerId, accept: $accept) { id status } }`,
+        { offerId: pendingOffer.id, accept },
       );
-      setActiveDelivery(data.myActiveDelivery);
+      if (accept) {
+        const data = await gql<{ myActiveDelivery: ActiveDelivery | null }>(
+          `query { myActiveDelivery { id status order { id status deliveryLat deliveryLng restaurant { name lat lng } } } }`,
+        );
+        setActiveDelivery(data.myActiveDelivery);
+      }
+      setPendingOffer(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "リクエストに失敗しました";
+      setOfferError(message);
+      if (message.includes("expired") || message.includes("already responded") || message.includes("not found")) {
+        setPendingOffer(null);
+      }
+    } finally {
+      setResponding(false);
     }
-    setPendingOffer(null);
   }
 
   async function confirmPickup() {
@@ -210,7 +251,7 @@ export function DashboardPage() {
   }, [pendingOffer, position]);
 
   return (
-    <div className="driver-layout">
+    <div className={classNames("driver-layout", { "driver-layout--offer-open": pendingOffer })}>
       <div className="map-container">
         <MapContainer center={position} zoom={14} style={{ height: "100%", width: "100%" }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -233,7 +274,10 @@ export function DashboardPage() {
       </div>
 
       <div className="map-controls">
-        <button className={`btn ${isOnline ? "btn-success" : "btn-secondary"}`} onClick={toggleOnline}>
+        <button
+          className={classNames("btn", { "btn-success": isOnline, "btn-secondary": !isOnline })}
+          onClick={toggleOnline}
+        >
           {isOnline ? "オンライン" : "オフライン"}
         </button>
         <button className="btn btn-secondary" onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }}>
@@ -242,16 +286,21 @@ export function DashboardPage() {
       </div>
 
       {pendingOffer && (
-        <div className="modal">
-          <div className="modal-content">
+        <div className="modal" onClick={() => !responding && setPendingOffer(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>新しいオファー</h3>
             <p><strong>{pendingOffer.order.restaurant.name}</strong></p>
             {pendingOffer.totalDistance != null && <p>距離: {formatDistance(pendingOffer.totalDistance)}</p>}
             {pendingOffer.estimatedMinutes != null && <p>ETA: {pendingOffer.estimatedMinutes} 分</p>}
             {pendingOffer.reward != null && <p>報酬: {formatPrice(pendingOffer.reward)}</p>}
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-              <button className="btn btn-success" onClick={() => respondToOffer(true)}>承認</button>
-              <button className="btn btn-danger" onClick={() => respondToOffer(false)}>拒否</button>
+            {offerError && <p className="modal-error">{offerError}</p>}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-success" disabled={responding} onClick={() => respondToOffer(true)}>
+                {responding ? "送信中..." : "承認"}
+              </button>
+              <button type="button" className="btn btn-danger" disabled={responding} onClick={() => respondToOffer(false)}>
+                {responding ? "送信中..." : "拒否"}
+              </button>
             </div>
           </div>
         </div>

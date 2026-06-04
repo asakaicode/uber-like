@@ -1,3 +1,5 @@
+import classNames from "classnames";
+
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/graphql";
 export const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:4000/graphql";
 
@@ -54,3 +56,4 @@ export function formatDistance(meters: number): string {
 }
 
 export { useInfiniteScroll } from "./useInfiniteScroll";
+export { classNames };

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.80.6",
+    "classnames": "^2.5.1",
     "graphql": "^16.11.0",
     "graphql-ws": "^6.0.5"
   },
