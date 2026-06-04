@@ -12,6 +12,7 @@ const yoga = createYoga<{ request: Request }, Context>({
   schema,
   context: ({ request }) => buildContext(request.headers.get("authorization")),
   graphiql: true,
+  maskedErrors: false,
   cors: {
     origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
     credentials: true,
