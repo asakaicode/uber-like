@@ -1,0 +1,314 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout>
+  <div class="hero">
+    <div class="container">
+      <h1>Uber Eats 風<br />フードデリバリーアプリ</h1>
+      <p>
+        ユーザー・店舗・ドライバーの 3 つのフロントエンドと GraphQL API
+        を中心に、注文から配達までをリアルタイムでつなぐモノレポアプリです。
+      </p>
+      <div class="badges">
+        <span class="badge">GraphQL</span>
+        <span class="badge">React + Vite</span>
+        <span class="badge">PostgreSQL</span>
+        <span class="badge">Redis / BullMQ</span>
+        <span class="badge">Leaflet / OSRM</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="overview">
+    <div class="container">
+      <h2>概要</h2>
+      <p>
+        このプロジェクトは、Uber Eats のようなフードデリバリーサービスを模した学習・デモ用アプリです。
+        1 注文 = 1 店舗のルールで、ユーザーがメニューを注文し、店舗が受注・調理し、
+        ドライバーがピックアップから配達まで担当します。
+      </p>
+      <p>
+        バックエンドは GraphQL API が中心で、注文状態の変更は
+        <strong>GraphQL Subscriptions</strong>（graphql-ws）で各クライアントにリアルタイム配信されます。
+        配車は BullMQ キュー経由で Dispatcher ワーカーが処理し、近くの空きドライバーにオファーを送ります。
+      </p>
+
+      <h3>システム構成</h3>
+      <div class="arch">┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│  ユーザー    │  │   店舗       │  │  ドライバー  │
+│  :3000      │  │   :3001     │  │   :3002     │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │
+       └────────────────┼────────────────┘
+                        │ GraphQL / WS
+                        ▼
+               ┌─────────────────┐
+               │   GraphQL API   │ :4000
+               │  (GraphQL Yoga) │
+               └────────┬────────┘
+                        │
+         ┌──────────────┼──────────────┐
+         ▼              ▼              ▼
+   ┌──────────┐  ┌──────────┐  ┌──────────────┐
+   │PostgreSQL│  │  Redis   │  │  Dispatcher  │
+   │ (Prisma) │  │ (BullMQ) │  │   ワーカー    │
+   └──────────┘  └──────────┘  └──────────────┘
+                                       │
+                               ┌───────┴───────┐
+                               ▼               ▼
+                         OSRM ルート    OR-Tools（任意）
+                         (地図・距離)    (同時注文最適化)</div>
+    </div>
+  </section>
+
+  <section id="apps">
+    <div class="container">
+      <h2>3 つのフロントエンド</h2>
+      <p>
+        それぞれ独立した Vite + React SPA として動作します。
+        認証は JWT（メール / パスワード）で、ロールごとにアクセス可能な機能が異なります。
+      </p>
+
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon">🛒</div>
+          <h3>ユーザーアプリ</h3>
+          <p>
+            近くのレストラン一覧、メニュー閲覧、カートから注文。
+            注文後は地図上でドライバーの位置と ETA をリアルタイム追跡できます。
+          </p>
+          <span class="port">localhost:3000</span>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🍽️</div>
+          <h3>店舗アプリ</h3>
+          <p>
+            届いた注文の確認、受注 / 拒否、調理開始・完了の操作。
+            ステータス変更はドライバー配車やユーザー画面に即座に反映されます。
+          </p>
+          <span class="port">localhost:3001</span>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🚗</div>
+          <h3>ドライバーアプリ</h3>
+          <p>
+            オンライン / オフライン切り替え、配車オファーの受諾 / 拒否、
+            ピックアップ・配達完了、位置情報の送信。Leaflet 地図でルート表示。
+          </p>
+          <span class="port">localhost:3002</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="flow">
+    <div class="container">
+      <h2>注文から配達までの流れ</h2>
+      <p>1 件の注文が完了するまで、おおまかに次のステップを辿ります。</p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">1</div>
+          <div class="flow-body">
+            <strong>ユーザーが注文</strong>
+            <span>メニューを選び注文を作成。ステータスは PENDING。</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">2</div>
+          <div class="flow-body">
+            <strong>店舗が受注 / 拒否</strong>
+            <span>受注すると PREPARING へ。拒否すると CANCELLED。</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">3</div>
+          <div class="flow-body">
+            <strong>調理完了 → 配車キューへ</strong>
+            <span>READY になると BullMQ にジョブが入り、Dispatcher が起動。</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">4</div>
+          <div class="flow-body">
+            <strong>Dispatcher がドライバーを選定</strong>
+            <span>近傍の空きドライバーにオファーを送信（貪欲法。OR-Tools で一括最適化も可）。</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">5</div>
+          <div class="flow-body">
+            <strong>ドライバーがオファーに応答</strong>
+            <span>受諾で ASSIGNED → ピックアップ → 配達中 → 完了。</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">6</div>
+          <div class="flow-body">
+            <strong>リアルタイム更新</strong>
+            <span>各ステップで Subscription が発火し、3 つのアプリが同期更新。</span>
+          </div>
+        </div>
+      </div>
+
+      <h3>配車（Dispatcher）</h3>
+      <p>
+        <code>services/dispatcher</code> は Redis 上の BullMQ キューを監視する Node.js ワーカーです。
+        注文が配車可能になると、ドライバーの現在地・空き状況・距離をもとに最適な候補を選び、
+        <code>DriverOffer</code> を作成してドライバーアプリに通知します。
+        タイムアウトや拒否時は次の候補へフォールバックします。
+      </p>
+
+      <h3>地図・ルーティング</h3>
+      <p>
+        地図表示に OpenStreetMap + Leaflet を使用。距離・ETA 計算には OSRM を利用します。
+        開発時は公開デモサーバー（<code>router.project-osrm.org</code>）をフォールバックとして使えます。
+        ローカル OSRM を立てることも可能です。
+      </p>
+    </div>
+  </section>
+
+  <section id="tech">
+    <div class="container">
+      <h2>技術スタック</h2>
+
+      <h3>フロントエンド</h3>
+      <ul class="tech-list">
+        <li>React 19</li>
+        <li>Vite</li>
+        <li>TanStack Router</li>
+        <li>TanStack Query</li>
+        <li>Leaflet</li>
+        <li>graphql-ws</li>
+      </ul>
+
+      <h3>バックエンド</h3>
+      <ul class="tech-list">
+        <li>Node.js</li>
+        <li>GraphQL Yoga</li>
+        <li>Prisma</li>
+        <li>PostgreSQL</li>
+        <li>Redis</li>
+        <li>BullMQ</li>
+        <li>JWT 認証</li>
+      </ul>
+
+      <h3>インフラ・その他</h3>
+      <ul class="tech-list">
+        <li>pnpm モノレポ（Turborepo）</li>
+        <li>Docker Compose</li>
+        <li>OSRM</li>
+        <li>OR-Tools（Python、任意）</li>
+        <li>Relay Connection ページネーション</li>
+      </ul>
+
+      <h3>モノレポ構成</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>パス</th>
+            <th>役割</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>apps/user</code></td>
+            <td>ユーザー向け SPA</td>
+          </tr>
+          <tr>
+            <td><code>apps/restaurant</code></td>
+            <td>店舗向け SPA</td>
+          </tr>
+          <tr>
+            <td><code>apps/driver</code></td>
+            <td>ドライバー向け SPA</td>
+          </tr>
+          <tr>
+            <td><code>apps/api</code></td>
+            <td>GraphQL API サーバー</td>
+          </tr>
+          <tr>
+            <td><code>services/dispatcher</code></td>
+            <td>配車ワーカー</td>
+          </tr>
+          <tr>
+            <td><code>services/ortools-matcher</code></td>
+            <td>OR-Tools 最適化（Python）</td>
+          </tr>
+          <tr>
+            <td><code>packages/database</code></td>
+            <td>Prisma スキーマ・seed</td>
+          </tr>
+          <tr>
+            <td><code>packages/shared</code></td>
+            <td>共通型・ユーティリティ</td>
+          </tr>
+          <tr>
+            <td><code>packages/web</code></td>
+            <td>共通 UI・GraphQL ヘルパー</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="container">
+      <h2>アプリの起動方法</h2>
+      <p>
+        この紹介サイトとは別に、メインアプリは Docker Compose またはローカル開発で起動します。
+      </p>
+
+      <h3>Docker Compose（推奨）</h3>
+      <p>リポジトリルートで以下を実行すると、DB・API・3 アプリが一括起動します。</p>
+      <div class="arch">pnpm docker:up</div>
+
+      <h3>ローカル開発</h3>
+      <div class="arch">pnpm install
+cp .env.example .env
+docker compose up -d postgres redis
+pnpm db:push && pnpm db:seed
+pnpm --filter @uber-like/api dev
+pnpm --filter @uber-like/dispatcher dev
+pnpm dev</div>
+
+      <h3>テストアカウント</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>ロール</th>
+            <th>Email</th>
+            <th>Password</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ユーザー</td>
+            <td><code>customer@example.com</code></td>
+            <td><code>password123</code></td>
+          </tr>
+          <tr>
+            <td>店舗</td>
+            <td><code>restaurant1@example.com</code></td>
+            <td><code>password123</code></td>
+          </tr>
+          <tr>
+            <td>ドライバー</td>
+            <td><code>driver1@example.com</code></td>
+            <td><code>password123</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>この紹介サイトの起動</h3>
+      <p>このページ自体は <code>intro/</code> フォルダで独立して動きます。</p>
+      <div class="arch">cd intro
+pnpm install --ignore-workspace
+pnpm run start</div>
+      <p>→ <a href="http://localhost:4321">http://localhost:4321</a></p>
+    </div>
+  </section>
+</Layout>

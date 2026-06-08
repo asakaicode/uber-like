@@ -1,0 +1,44 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+}
+
+const { title = "Uber-like — アプリ紹介" } = Astro.props;
+---
+
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Uber Eats 風フードデリバリーアプリの仕組みと構成の紹介" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a href="/" class="logo">Uber<span>-like</span></a>
+        <nav class="nav">
+          <a href="#overview">概要</a>
+          <a href="#apps">アプリ</a>
+          <a href="#flow">注文フロー</a>
+          <a href="#tech">技術</a>
+          <a href="#start">起動方法</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>このページはアプリの仕組みを説明するための独立した紹介サイトです。</p>
+      </div>
+    </footer>
+  </body>
+</html>
