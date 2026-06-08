@@ -1,0 +1,161 @@
+x-api-env: &api-env
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/uberlike
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: dev-secret-change-in-production
+  OSRM_URL: http://router.project-osrm.org
+  API_PORT: "4000"
+  BASE_REWARD: "500"
+  REWARD_PER_KM: "150"
+  DEFAULT_PAGE_SIZE: "20"
+  MAX_PAGE_SIZE: "50"
+
+x-dispatcher-env: &dispatcher-env
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/uberlike
+  REDIS_URL: redis://redis:6379
+  OSRM_URL: http://router.project-osrm.org
+  DISPATCH_INTERVAL_MS: "5000"
+  OFFER_TIMEOUT_MS: "60000"
+  BASE_REWARD: "500"
+  REWARD_PER_KM: "150"
+  ORTOOLS_URL: http://ortools-matcher:5001
+  ORTOOLS_THRESHOLD: "2"
+
+x-frontend-build-args: &frontend-build-args
+  VITE_API_URL: http://localhost:4000/graphql
+  VITE_WS_URL: ws://localhost:4000/graphql
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: uberlike
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/migrate.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/uberlike
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      <<: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  dispatcher:
+    build:
+      context: .
+      dockerfile: docker/dispatcher.Dockerfile
+    environment:
+      <<: *dispatcher-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  user:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        APP_NAME: user
+        <<: *frontend-build-args
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  restaurant:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        APP_NAME: restaurant
+        <<: *frontend-build-args
+    ports:
+      - "3001:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  driver:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        APP_NAME: driver
+        <<: *frontend-build-args
+    ports:
+      - "3002:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    command: osrm-routed --algorithm mld /data/kanto.osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/osrm:/data
+    profiles:
+      - osrm
+
+  ortools-matcher:
+    build:
+      context: ./services/ortools-matcher
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    profiles:
+      - ortools
+
+volumes:
+  postgres_data:

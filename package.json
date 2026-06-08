@@ -1,0 +1,25 @@
+{
+  "name": "uber-like",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "pnpm --filter @uber-like/database generate",
+    "db:migrate": "pnpm --filter @uber-like/database migrate",
+    "db:seed": "pnpm --filter @uber-like/database seed",
+    "db:push": "pnpm --filter @uber-like/database push",
+    "test": "pnpm --filter @uber-like/shared test",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

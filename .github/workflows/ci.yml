@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/uberlike
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-secret
+      OSRM_URL: http://router.project-osrm.org
+      API_PORT: "4000"
+      DISPATCH_INTERVAL_MS: "5000"
+      OFFER_TIMEOUT_MS: "60000"
+      BASE_REWARD: "500"
+      REWARD_PER_KM: "150"
+      DEFAULT_PAGE_SIZE: "20"
+      ORTOOLS_URL: http://localhost:5001
+      ORTOOLS_THRESHOLD: "2"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: uberlike
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install
+      - run: cp .env.example .env
+      - run: pnpm --filter @uber-like/shared build
+      - run: pnpm --filter @uber-like/database generate
+      - run: pnpm db:push
+      - run: pnpm --filter @uber-like/database build
+      - run: pnpm --filter @uber-like/api build
+      - run: pnpm --filter @uber-like/dispatcher build
+      - run: pnpm --filter @uber-like/user build
+      - run: pnpm --filter @uber-like/restaurant build
+      - run: pnpm --filter @uber-like/driver build
