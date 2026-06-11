@@ -14,16 +14,16 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n": typeof types.OfferFieldsFragmentDoc,
-    "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n": typeof types.PendingOffersDocument,
     "\n  query OfferHistory($first: Int, $after: String) {\n    myOffers(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          createdAt\n          order {\n            id\n            restaurant {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n": typeof types.OfferHistoryDocument,
-    "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n": typeof types.DriverOfferReceivedDocument,
-    "\n  query MyActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n": typeof types.MyActiveDeliveryDocument,
-    "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n": typeof types.SetDriverOnlineDocument,
-    "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n": typeof types.UpdateDriverLocationDocument,
-    "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n": typeof types.RespondToOfferDocument,
+    "\n  query ActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n": typeof types.ActiveDeliveryDocument,
     "\n  mutation ConfirmPickup($deliveryId: ID!) {\n    confirmPickup(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n": typeof types.ConfirmPickupDocument,
     "\n  mutation ConfirmDelivery($deliveryId: ID!) {\n    confirmDelivery(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n": typeof types.ConfirmDeliveryDocument,
+    "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n": typeof types.UpdateDriverLocationDocument,
+    "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n": typeof types.OfferFieldsFragmentDoc,
+    "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n": typeof types.PendingOffersDocument,
+    "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n": typeof types.DriverOfferReceivedDocument,
+    "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n": typeof types.RespondToOfferDocument,
+    "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n": typeof types.SetDriverOnlineDocument,
     "\n  mutation DriverLogin($email: String!, $password: String!) {\n    login(email: $email, password: $password) {\n      token\n    }\n  }\n": typeof types.DriverLoginDocument,
     "\n  mutation RestaurantLogin($email: String!, $password: String!) {\n    login(email: $email, password: $password) {\n      token\n      restaurantId\n    }\n  }\n": typeof types.RestaurantLoginDocument,
     "\n  query RestaurantOrders($first: Int, $after: String, $status: OrderStatus) {\n    restaurantOrders(first: $first, after: $after, status: $status) {\n      edges {\n        cursor\n        node {\n          id\n          status\n          totalAmount\n          createdAt\n          deliveryAddress\n          delivery {\n            id\n            driver {\n              id\n              name\n              rating\n            }\n          }\n          items {\n            id\n            quantity\n            menuItem {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n": typeof types.RestaurantOrdersDocument,
@@ -40,16 +40,16 @@ type Documents = {
     "\n  mutation CreateOrder($input: CreateOrderInput!) {\n    createOrder(input: $input) {\n      id\n    }\n  }\n": typeof types.CreateOrderDocument,
 };
 const documents: Documents = {
-    "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n": types.OfferFieldsFragmentDoc,
-    "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n": types.PendingOffersDocument,
     "\n  query OfferHistory($first: Int, $after: String) {\n    myOffers(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          createdAt\n          order {\n            id\n            restaurant {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n": types.OfferHistoryDocument,
-    "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n": types.DriverOfferReceivedDocument,
-    "\n  query MyActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n": types.MyActiveDeliveryDocument,
-    "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n": types.SetDriverOnlineDocument,
-    "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n": types.UpdateDriverLocationDocument,
-    "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n": types.RespondToOfferDocument,
+    "\n  query ActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n": types.ActiveDeliveryDocument,
     "\n  mutation ConfirmPickup($deliveryId: ID!) {\n    confirmPickup(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n": types.ConfirmPickupDocument,
     "\n  mutation ConfirmDelivery($deliveryId: ID!) {\n    confirmDelivery(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n": types.ConfirmDeliveryDocument,
+    "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n": types.UpdateDriverLocationDocument,
+    "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n": types.OfferFieldsFragmentDoc,
+    "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n": types.PendingOffersDocument,
+    "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n": types.DriverOfferReceivedDocument,
+    "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n": types.RespondToOfferDocument,
+    "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n": types.SetDriverOnlineDocument,
     "\n  mutation DriverLogin($email: String!, $password: String!) {\n    login(email: $email, password: $password) {\n      token\n    }\n  }\n": types.DriverLoginDocument,
     "\n  mutation RestaurantLogin($email: String!, $password: String!) {\n    login(email: $email, password: $password) {\n      token\n      restaurantId\n    }\n  }\n": types.RestaurantLoginDocument,
     "\n  query RestaurantOrders($first: Int, $after: String, $status: OrderStatus) {\n    restaurantOrders(first: $first, after: $after, status: $status) {\n      edges {\n        cursor\n        node {\n          id\n          status\n          totalAmount\n          createdAt\n          deliveryAddress\n          delivery {\n            id\n            driver {\n              id\n              name\n              rating\n            }\n          }\n          items {\n            id\n            quantity\n            menuItem {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n": types.RestaurantOrdersDocument,
@@ -83,35 +83,11 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n"): (typeof documents)["\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
 export function graphql(source: "\n  query OfferHistory($first: Int, $after: String) {\n    myOffers(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          createdAt\n          order {\n            id\n            restaurant {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n"): (typeof documents)["\n  query OfferHistory($first: Int, $after: String) {\n    myOffers(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          createdAt\n          order {\n            id\n            restaurant {\n              name\n            }\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n"): (typeof documents)["\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  query MyActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query MyActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n"): (typeof documents)["\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n"];
+export function graphql(source: "\n  query ActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query ActiveDelivery {\n    myActiveDelivery {\n      id\n      status\n      order {\n        id\n        status\n        deliveryLat\n        deliveryLng\n        restaurant {\n          name\n          lat\n          lng\n        }\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -120,6 +96,30 @@ export function graphql(source: "\n  mutation ConfirmPickup($deliveryId: ID!) {\
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation ConfirmDelivery($deliveryId: ID!) {\n    confirmDelivery(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation ConfirmDelivery($deliveryId: ID!) {\n    confirmDelivery(deliveryId: $deliveryId) {\n      id\n      status\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {\n    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {\n      id\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n"): (typeof documents)["\n  fragment OfferFields on DriverOffer {\n    id\n    status\n    expiresAt\n    totalDistance\n    estimatedMinutes\n    reward\n    order {\n      id\n      deliveryLat\n      deliveryLng\n      restaurant {\n        name\n        lat\n        lng\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query PendingOffers($first: Int, $status: OfferStatus) {\n    myOffers(first: $first, status: $status) {\n      edges {\n        node {\n          ...OfferFields\n        }\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n"): (typeof documents)["\n  subscription DriverOfferReceived {\n    driverOfferReceived {\n      ...OfferFields\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {\n    respondToOffer(offerId: $offerId, accept: $accept) {\n      id\n      status\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n"): (typeof documents)["\n  mutation SetDriverOnline($isOnline: Boolean!) {\n    setDriverOnline(isOnline: $isOnline) {\n      id\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

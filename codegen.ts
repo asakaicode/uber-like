@@ -30,7 +30,11 @@ const config: CodegenConfig = {
     },
     "packages/web/src/gql/": {
       preset: "client",
-      documents: ["apps/user/src/**/*.tsx", "apps/restaurant/src/**/*.tsx", "apps/driver/src/**/*.tsx"],
+      documents: [
+        "apps/user/src/**/*.{ts,tsx}",
+        "apps/restaurant/src/**/*.{ts,tsx}",
+        "apps/driver/src/**/*.{ts,tsx}",
+      ],
       config: {
         scalars: { DateTime: "string" },
         enumsAsTypes: true,
