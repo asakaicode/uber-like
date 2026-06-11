@@ -9,7 +9,8 @@
     "db:migrate": "pnpm --filter @uber-like/database migrate",
     "db:seed": "pnpm --filter @uber-like/database seed",
     "db:push": "pnpm --filter @uber-like/database push",
-    "test": "pnpm --filter @uber-like/shared test",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"
