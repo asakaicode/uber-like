@@ -93,8 +93,39 @@ chmod +x scripts/setup-osrm.sh
 docker compose --profile osrm up -d osrm
 ```
 
+## ディレクトリ構成
+
+```
+apps/
+  api/          GraphQL API（resolvers/auth|order|delivery|subscription）
+  user/         ユーザー SPA
+  restaurant/   店舗 SPA
+  driver/       ドライバー SPA（hooks/ + components/ に分割済み）
+packages/
+  database/     Prisma クライアント・スキーマ
+  geo/          OSRM ルーティング共通ライブラリ（@uber-like/geo）
+  shared/       共有 enum・定数（isomorphic）
+  web/          フロント共通ユーティリティ（gql/useSubscription/LoginForm 等）
+services/
+  dispatcher/   配車ワーカー（BullMQ + OR-Tools）
+  ortools-matcher/  OR-Tools 最適化（Python）
+```
+
+## GraphQL コード生成
+
+スキーマ変更やクエリ追加後は codegen を再実行:
+
+```bash
+pnpm codegen
+```
+
+生成ファイル:
+- `apps/api/src/generated/resolver-types.ts` — サーバーリゾルバー型
+- `packages/web/src/gql/` — フロント用 TypedDocumentNode + 型定義
+
 ## 技術スタック
 
 - **Frontend**: React, TanStack Router/Query, Vite, Leaflet (OSM), nginx (Docker)
 - **Backend**: Node.js, GraphQL Yoga, Prisma, PostgreSQL, Redis, BullMQ
+- **Codegen**: @graphql-codegen/cli（client-preset + typescript-resolvers）
 - **Infra**: Docker Compose
