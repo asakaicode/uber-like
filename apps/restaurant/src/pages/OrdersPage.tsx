@@ -1,8 +1,13 @@
-import { useEffect } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { gql, formatPrice, formatStatus, printDocument, useInfiniteScroll, WS_URL, getToken, getRestaurantId } from "@uber-like/web";
+import {
+  gql,
+  formatPrice,
+  formatStatus,
+  useInfiniteScroll,
+  useSubscription,
+  getRestaurantId,
+} from "@uber-like/web";
 import { graphql } from "@uber-like/web/gql";
-import { createClient } from "graphql-ws";
 
 const ORDERS_QUERY = graphql(`
   query RestaurantOrders($first: Int, $after: String, $status: OrderStatus) {
@@ -68,38 +73,26 @@ const REJECT_ORDER_MUTATION = graphql(`
 
 export function OrdersPage() {
   const queryClient = useQueryClient();
+  const restaurantId = getRestaurantId() ?? "";
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ["restaurantOrders"],
     queryFn: ({ pageParam }) => gql(ORDERS_QUERY, { first: 20, after: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) =>
-      last.restaurantOrders.pageInfo.hasNextPage ? last.restaurantOrders.pageInfo.endCursor : undefined,
+      last.restaurantOrders.pageInfo.hasNextPage
+        ? last.restaurantOrders.pageInfo.endCursor
+        : undefined,
   });
 
   const sentinelRef = useInfiniteScroll(hasNextPage, isFetchingNextPage, fetchNextPage);
 
-  useEffect(() => {
-    const token = getToken();
-    const restaurantId = getRestaurantId();
-    if (!token || !restaurantId) return;
-    const client = createClient({
-      url: WS_URL,
-      connectionParams: { authorization: `Bearer ${token}` },
-    });
-    const dispose = client.subscribe(
-      {
-        query: printDocument(NEW_ORDER_SUBSCRIPTION),
-        variables: { restaurantId },
-      },
-      {
-        next: () => refetch(),
-        error: () => {},
-        complete: () => {},
-      },
-    );
-    return () => dispose();
-  }, [refetch]);
+  useSubscription(
+    NEW_ORDER_SUBSCRIPTION,
+    { restaurantId },
+    () => { queryClient.invalidateQueries({ queryKey: ["restaurantOrders"] }); },
+    !!restaurantId,
+  );
 
   async function acceptOrder(orderId: string) {
     await gql(ACCEPT_ORDER_MUTATION, { orderId });
@@ -127,16 +120,25 @@ export function OrdersPage() {
           <p>{order.deliveryAddress}</p>
           <ul>
             {order.items.map((item) => (
-              <li key={item.id}>{item.menuItem.name} x{item.quantity}</li>
+              <li key={item.id}>
+                {item.menuItem.name} x{item.quantity}
+              </li>
             ))}
           </ul>
           {order.delivery?.driver && (
-            <p>ドライバー: {order.delivery.driver.name} (★ {order.delivery.driver.rating.toFixed(1)})</p>
+            <p>
+              ドライバー: {order.delivery.driver.name} (★{" "}
+              {order.delivery.driver.rating.toFixed(1)})
+            </p>
           )}
           {order.status === "PENDING_RESTAURANT" && (
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <button className="btn btn-success" onClick={() => acceptOrder(order.id)}>承認</button>
-              <button className="btn btn-danger" onClick={() => rejectOrder(order.id)}>拒否</button>
+              <button className="btn btn-success" onClick={() => acceptOrder(order.id)}>
+                承認
+              </button>
+              <button className="btn btn-danger" onClick={() => rejectOrder(order.id)}>
+                拒否
+              </button>
             </div>
           )}
         </div>

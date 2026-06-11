@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, Marker, Polyline, TileLayer } from "react-leaflet";
-import { gql, formatPrice, formatStatus, printDocument, WS_URL, getToken } from "@uber-like/web";
+import { gql, formatPrice, formatStatus, useSubscription } from "@uber-like/web";
 import { graphql } from "@uber-like/web/gql";
-import { createClient } from "graphql-ws";
 
 const ORDER_QUERY = graphql(`
   query OrderTrack($id: ID!) {
@@ -62,37 +61,21 @@ export function OrderTrackPage() {
   const { data } = useQuery({
     queryKey: ["order", id],
     queryFn: () => gql(ORDER_QUERY, { id }),
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    const client = createClient({
-      url: WS_URL,
-      connectionParams: { authorization: `Bearer ${token}` },
-    });
-    const dispose = client.subscribe(
-      {
-        query: printDocument(ORDER_STATUS_SUBSCRIPTION),
-        variables: { orderId: id },
-      },
-      {
-        next: () => queryClient.invalidateQueries({ queryKey: ["order", id] }),
-        error: console.error,
-        complete: () => {},
-      },
-    );
-    return () => dispose();
-  }, [id, queryClient]);
+  useSubscription(ORDER_STATUS_SUBSCRIPTION, { orderId: id }, () => {
+    queryClient.invalidateQueries({ queryKey: ["order", id] });
+  });
 
   const order = data?.order;
   if (!order) return <div className="spinner">Loading...</div>;
 
   const driver = order.delivery?.driver;
-  const center: [number, number] = driver?.lat && driver?.lng
-    ? [driver.lat, driver.lng]
-    : [order.deliveryLat, order.deliveryLng];
+  const center: [number, number] =
+    driver?.lat && driver?.lng
+      ? [driver.lat, driver.lng]
+      : [order.deliveryLat, order.deliveryLng];
 
   async function handleRate() {
     await gql(RATE_DRIVER_MUTATION, { orderId: id, score, comment });
@@ -110,11 +93,15 @@ export function OrderTrackPage() {
       {driver && (
         <div className="card">
           <h3>ドライバー</h3>
-          <p>{driver.name} · ★ {driver.rating.toFixed(1)}</p>
+          <p>
+            {driver.name} · ★ {driver.rating.toFixed(1)}
+          </p>
         </div>
       )}
 
-      {(order.status === "DRIVER_ASSIGNED" || order.status === "PICKED_UP" || order.status === "DELIVERED") && (
+      {(order.status === "DRIVER_ASSIGNED" ||
+        order.status === "PICKED_UP" ||
+        order.status === "DELIVERED") && (
         <div style={{ height: 300, marginBottom: "1rem", borderRadius: 12, overflow: "hidden" }}>
           <MapContainer center={center} zoom={14} style={{ height: "100%", width: "100%" }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -139,9 +126,23 @@ export function OrderTrackPage() {
       {order.status === "DELIVERED" && !rated && (
         <div className="card">
           <h3>ドライバーを評価</h3>
-          <input className="input" type="number" min={1} max={5} value={score} onChange={(e) => setScore(Number(e.target.value))} />
-          <input className="input" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="コメント（任意）" />
-          <button className="btn" onClick={handleRate}>送信</button>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={5}
+            value={score}
+            onChange={(e) => setScore(Number(e.target.value))}
+          />
+          <input
+            className="input"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="コメント（任意）"
+          />
+          <button className="btn" onClick={handleRate}>
+            送信
+          </button>
         </div>
       )}
       {rated && <p>評価ありがとうございました！</p>}

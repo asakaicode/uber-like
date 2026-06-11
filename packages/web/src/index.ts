@@ -27,6 +27,14 @@ export function clearToken(): void {
   localStorage.removeItem("token");
 }
 
+export function logout(): void {
+  clearToken();
+  localStorage.removeItem("restaurantId");
+  localStorage.removeItem("customerId");
+  localStorage.removeItem("driverId");
+  window.location.replace("/login");
+}
+
 export async function gql<TResult, TVariables>(
   document: TypedDocumentNode<TResult, TVariables>,
   variables?: TVariables,
@@ -40,11 +48,19 @@ export async function gql<TResult, TVariables>(
     },
     body: JSON.stringify({ query: print(document), variables }),
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as {
     data?: TResult;
-    errors?: Array<{ message: string }>;
+    errors?: Array<{ message: string; extensions?: { code?: string } }>;
   };
-  if (json.errors?.length) throw new Error(json.errors[0]!.message);
+  if (json.errors?.length) {
+    const err = json.errors[0]!;
+    if (err.extensions?.code === "UNAUTHENTICATED") {
+      clearToken();
+      window.location.replace("/login");
+    }
+    throw new Error(err.message);
+  }
   return json.data as TResult;
 }
 
@@ -68,5 +84,9 @@ export function formatDistance(meters: number): string {
 }
 
 export { useInfiniteScroll } from "./useInfiniteScroll";
+export { useSubscription } from "./useSubscription";
+export { getWsClient } from "./ws";
+export { LoginForm } from "./LoginForm";
+export { createAppBootstrap } from "./bootstrap";
 export { classNames };
 export type { ResultOf, VariablesOf } from "@graphql-typed-document-node/core";

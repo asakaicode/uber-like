@@ -7,15 +7,13 @@ import {
   formatDistance,
   formatPrice,
   formatStatus,
-  printDocument,
   useInfiniteScroll,
-  WS_URL,
-  getToken,
+  useSubscription,
+  logout,
   classNames,
   type ResultOf,
 } from "@uber-like/web";
 import { graphql } from "@uber-like/web/gql";
-import { createClient } from "graphql-ws";
 
 const OFFER_FIELDS = graphql(`
   fragment OfferFields on DriverOffer {
@@ -158,14 +156,13 @@ const driverIcon = (heading: number) =>
 
 function MapUpdater({ center }: { center: [number, number] }) {
   const map = useMap();
-  useEffect(() => {
-    map.setView(center);
-  }, [center, map]);
+  useEffect(() => { map.setView(center); }, [center, map]);
   return null;
 }
 
 export function DashboardPage() {
   const [position, setPosition] = useState<[number, number]>([35.6812, 139.7671]);
+  const headingRef = useRef(0);
   const [heading, setHeading] = useState(0);
   const [isOnline, setIsOnline] = useState(false);
   const [pendingOffer, setPendingOffer] = useState<Offer | null>(null);
@@ -196,6 +193,7 @@ export function DashboardPage() {
   const updateLocation = useCallback(async (lat: number, lng: number, h: number) => {
     setPosition([lat, lng]);
     setHeading(h);
+    headingRef.current = h;
     if (isOnline) {
       await gql(UPDATE_LOCATION_MUTATION, { lat, lng, heading: h }).catch(console.error);
     }
@@ -204,43 +202,38 @@ export function DashboardPage() {
   useEffect(() => {
     if (!navigator.geolocation) return;
     watchId.current = navigator.geolocation.watchPosition(
-      (pos) => updateLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.heading ?? heading),
+      (pos) => {
+        const h = pos.coords.heading ?? headingRef.current;
+        updateLocation(pos.coords.latitude, pos.coords.longitude, h);
+      },
       console.error,
       { enableHighAccuracy: true, maximumAge: 5000 },
     );
     return () => {
       if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     };
-  }, [updateLocation, heading]);
+  }, [updateLocation]);
 
   useEffect(() => {
     const handler = (e: DeviceOrientationEvent) => {
-      if (e.alpha != null) setHeading(e.alpha);
+      if (e.alpha != null) {
+        setHeading(e.alpha);
+        headingRef.current = e.alpha;
+      }
     };
     window.addEventListener("deviceorientation", handler);
     return () => window.removeEventListener("deviceorientation", handler);
   }, []);
 
-  useEffect(() => {
-    const token = getToken();
-    if (!token || !isOnline) return;
-    const client = createClient({
-      url: WS_URL,
-      connectionParams: { authorization: `Bearer ${token}` },
-    });
-    const dispose = client.subscribe(
-      { query: printDocument(DRIVER_OFFER_SUBSCRIPTION) },
-      {
-        next: (msg) => {
-          const offer = (msg.data as { driverOfferReceived: Offer })?.driverOfferReceived;
-          if (offer?.status === "PENDING") setPendingOffer(offer);
-        },
-        error: console.error,
-        complete: () => {},
-      },
-    );
-    return () => dispose();
-  }, [isOnline]);
+  useSubscription(
+    DRIVER_OFFER_SUBSCRIPTION,
+    {},
+    (data) => {
+      const offer = data.driverOfferReceived;
+      if (offer?.status === "PENDING") setPendingOffer(offer);
+    },
+    isOnline,
+  );
 
   useEffect(() => {
     async function loadActive() {
@@ -257,7 +250,7 @@ export function DashboardPage() {
         ? [activeDelivery.order.deliveryLat, activeDelivery.order.deliveryLng]
         : [activeDelivery.order.restaurant.lat, activeDelivery.order.restaurant.lng];
     fetchRoute(position[0], position[1], dest[0]!, dest[1]!);
-  }, [activeDelivery, position]);
+  }, [activeDelivery]);
 
   async function fetchRoute(fromLat: number, fromLng: number, toLat: number, toLng: number) {
     try {
@@ -296,7 +289,11 @@ export function DashboardPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "リクエストに失敗しました";
       setOfferError(message);
-      if (message.includes("expired") || message.includes("already responded") || message.includes("not found")) {
+      if (
+        message.includes("expired") ||
+        message.includes("already responded") ||
+        message.includes("not found")
+      ) {
         setPendingOffer(null);
       }
     } finally {
@@ -323,7 +320,7 @@ export function DashboardPage() {
       const o = pendingOffer.order;
       fetchRoute(position[0], position[1], o.restaurant.lat, o.restaurant.lng);
     }
-  }, [pendingOffer, position]);
+  }, [pendingOffer]);
 
   return (
     <div className={classNames("driver-layout", { "driver-layout--offer-open": pendingOffer })}>
@@ -355,7 +352,7 @@ export function DashboardPage() {
         >
           {isOnline ? "オンライン" : "オフライン"}
         </button>
-        <button className="btn btn-secondary" onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }}>
+        <button className="btn btn-secondary" onClick={logout}>
           ログアウト
         </button>
       </div>
@@ -364,16 +361,32 @@ export function DashboardPage() {
         <div className="modal" onClick={() => !responding && setPendingOffer(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>新しいオファー</h3>
-            <p><strong>{pendingOffer.order.restaurant.name}</strong></p>
-            {pendingOffer.totalDistance != null && <p>距離: {formatDistance(pendingOffer.totalDistance)}</p>}
-            {pendingOffer.estimatedMinutes != null && <p>ETA: {pendingOffer.estimatedMinutes} 分</p>}
+            <p>
+              <strong>{pendingOffer.order.restaurant.name}</strong>
+            </p>
+            {pendingOffer.totalDistance != null && (
+              <p>距離: {formatDistance(pendingOffer.totalDistance)}</p>
+            )}
+            {pendingOffer.estimatedMinutes != null && (
+              <p>ETA: {pendingOffer.estimatedMinutes} 分</p>
+            )}
             {pendingOffer.reward != null && <p>報酬: {formatPrice(pendingOffer.reward)}</p>}
             {offerError && <p className="modal-error">{offerError}</p>}
             <div className="modal-actions">
-              <button type="button" className="btn btn-success" disabled={responding} onClick={() => respondToOffer(true)}>
+              <button
+                type="button"
+                className="btn btn-success"
+                disabled={responding}
+                onClick={() => respondToOffer(true)}
+              >
                 {responding ? "送信中..." : "承認"}
               </button>
-              <button type="button" className="btn btn-danger" disabled={responding} onClick={() => respondToOffer(false)}>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={responding}
+                onClick={() => respondToOffer(false)}
+              >
                 {responding ? "送信中..." : "拒否"}
               </button>
             </div>
@@ -387,10 +400,15 @@ export function DashboardPage() {
             <h3>配送中: {activeDelivery.order.restaurant.name}</h3>
             <p>ステータス: {activeDelivery.order.status}</p>
             {activeDelivery.status === "ASSIGNED" && (
-              <button className="btn btn-success" onClick={confirmPickup}>商品を受取</button>
+              <button className="btn btn-success" onClick={confirmPickup}>
+                商品を受取
+              </button>
             )}
-            {(activeDelivery.status === "PICKED_UP" || activeDelivery.order.status === "PICKED_UP") && (
-              <button className="btn btn-success" onClick={confirmDelivery}>配達完了</button>
+            {(activeDelivery.status === "PICKED_UP" ||
+              activeDelivery.order.status === "PICKED_UP") && (
+              <button className="btn btn-success" onClick={confirmDelivery}>
+                配達完了
+              </button>
             )}
           </div>
         )}

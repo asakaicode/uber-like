@@ -1,5 +1,5 @@
-import { createRootRoute, createRoute, Outlet, redirect } from "@tanstack/react-router";
-import { clearToken, getToken } from "@uber-like/web";
+import { Outlet, createRootRoute, createRoute, redirect } from "@tanstack/react-router";
+import { getToken } from "@uber-like/web";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 
@@ -20,10 +20,6 @@ const authedRoute = createRoute({
   component: () => <Outlet />,
 });
 
-const indexRoute = createRoute({
-  getParentRoute: () => authedRoute,
-  path: "/",
-  component: DashboardPage,
-});
+const indexRoute = createRoute({ getParentRoute: () => authedRoute, path: "/", component: DashboardPage });
 
 export const routeTree = rootRoute.addChildren([loginRoute, authedRoute.addChildren([indexRoute])]);

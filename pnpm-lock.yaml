@@ -280,10 +280,19 @@ importers:
       react:
         specifier: ^19.0.0
         version: 19.2.7
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.7(react@19.2.7)
     devDependencies:
+      '@tanstack/react-router':
+        specifier: ^1.120.12
+        version: 1.170.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@types/react':
         specifier: ^19.1.6
         version: 19.2.16
+      '@types/react-dom':
+        specifier: ^19.1.5
+        version: 19.2.3(@types/react@19.2.16)
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
