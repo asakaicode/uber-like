@@ -50,12 +50,8 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: cp .env.example .env
-      - run: pnpm --filter @uber-like/shared build
-      - run: pnpm --filter @uber-like/database generate
+      - run: pnpm db:generate
       - run: pnpm db:push
-      - run: pnpm --filter @uber-like/database build
-      - run: pnpm --filter @uber-like/api build
-      - run: pnpm --filter @uber-like/dispatcher build
-      - run: pnpm --filter @uber-like/user build
-      - run: pnpm --filter @uber-like/restaurant build
-      - run: pnpm --filter @uber-like/driver build
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
