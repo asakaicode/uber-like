@@ -23,6 +23,52 @@ async function getDriverLocation(driverId: string) {
   });
 }
 
+interface OfferRouteData {
+  distToRestaurant: number;
+  distToCustomer: number;
+  totalDist: number;
+  duration: number;
+  reward: number;
+  score: number;
+}
+
+async function createOfferForDriver(
+  orderId: string,
+  delivery: { id: string },
+  driverId: string,
+  routeData: OfferRouteData,
+): Promise<void> {
+  const offer = await prisma.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.OFFERED } });
+    await tx.delivery.update({
+      where: { id: delivery.id },
+      data: {
+        distanceToRestaurant: routeData.distToRestaurant,
+        distanceToCustomer: routeData.distToCustomer,
+        totalDistance: routeData.totalDist,
+        estimatedMinutes: Math.ceil(routeData.duration / 60),
+        reward: routeData.reward,
+      },
+    });
+    return tx.driverOffer.create({
+      data: {
+        deliveryId: delivery.id,
+        driverId,
+        status: OfferStatus.PENDING,
+        priority: routeData.score,
+        expiresAt: getOfferExpiry(),
+      },
+    });
+  });
+
+  await redis.publish(
+    PUBSUB_CHANNELS.DRIVER_OFFER,
+    JSON.stringify({ offerId: offer.id, driverId }),
+  );
+
+  console.log(`Offer ${offer.id} sent to driver ${driverId} for order ${orderId}`);
+}
+
 async function dispatchOrder(orderId: string): Promise<void> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -32,7 +78,7 @@ async function dispatchOrder(orderId: string): Promise<void> {
     },
   });
 
-  if (!order || order.status !== OrderStatus.QUEUED && order.status !== OrderStatus.OFFERED) {
+  if (!order || (order.status !== OrderStatus.QUEUED && order.status !== OrderStatus.OFFERED)) {
     return;
   }
 
@@ -53,9 +99,10 @@ async function dispatchOrder(orderId: string): Promise<void> {
     }
   }
 
-  const drivers = await prisma.driverProfile.findMany({
-    where: { isOnline: true },
-  });
+  const acceptedOffer = delivery.offers.find((o) => o.status === OfferStatus.ACCEPTED);
+  if (acceptedOffer) return;
+
+  const drivers = await prisma.driverProfile.findMany({ where: { isOnline: true } });
 
   const rejectedDriverIds = new Set(
     delivery.offers
@@ -63,18 +110,7 @@ async function dispatchOrder(orderId: string): Promise<void> {
       .map((o) => o.driverId),
   );
 
-  const acceptedOffer = delivery.offers.find((o) => o.status === OfferStatus.ACCEPTED);
-  if (acceptedOffer) return;
-
-  const candidates: Array<{
-    driverId: string;
-    score: number;
-    distToRestaurant: number;
-    distToCustomer: number;
-    totalDist: number;
-    duration: number;
-    reward: number;
-  }> = [];
+  const candidates: Array<{ driverId: string } & OfferRouteData> = [];
 
   for (const driver of drivers) {
     if (rejectedDriverIds.has(driver.id)) continue;
@@ -100,19 +136,14 @@ async function dispatchOrder(orderId: string): Promise<void> {
         { lat: order.deliveryLat, lng: order.deliveryLng },
       );
       const totalDist = toRestaurant.distanceMeters + toCustomer.distanceMeters;
-      const totalKm = totalDist / 1000;
       candidates.push({
         driverId: driver.id,
-        score: scoreDriver(
-          toRestaurant.distanceMeters,
-          toCustomer.distanceMeters,
-          driver.rating,
-        ),
+        score: scoreDriver(toRestaurant.distanceMeters, toCustomer.distanceMeters, driver.rating),
         distToRestaurant: toRestaurant.distanceMeters,
         distToCustomer: toCustomer.distanceMeters,
         totalDist,
         duration: toRestaurant.durationSeconds + toCustomer.durationSeconds,
-        reward: calculateReward(totalKm),
+        reward: calculateReward(totalDist / 1000),
       });
     } catch {
       continue;
@@ -120,54 +151,18 @@ async function dispatchOrder(orderId: string): Promise<void> {
   }
 
   if (candidates.length === 0) {
-    setTimeout(() => {
-      dispatchOrder(orderId).catch(console.error);
-    }, 30000);
+    setTimeout(() => { dispatchOrder(orderId).catch(console.error); }, 30000);
     return;
   }
 
   candidates.sort((a, b) => a.score - b.score);
   const best = candidates[0]!;
-
-  const offer = await prisma.$transaction(async (tx) => {
-    await tx.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.OFFERED },
-    });
-    await tx.delivery.update({
-      where: { id: delivery.id },
-      data: {
-        distanceToRestaurant: best.distToRestaurant,
-        distanceToCustomer: best.distToCustomer,
-        totalDistance: best.totalDist,
-        estimatedMinutes: Math.ceil(best.duration / 60),
-        reward: best.reward,
-      },
-    });
-    return tx.driverOffer.create({
-      data: {
-        deliveryId: delivery.id,
-        driverId: best.driverId,
-        status: OfferStatus.PENDING,
-        priority: best.score,
-        expiresAt: getOfferExpiry(),
-      },
-    });
-  });
-
-  await redis.publish(
-    PUBSUB_CHANNELS.DRIVER_OFFER,
-    JSON.stringify({ offerId: offer.id, driverId: best.driverId }),
-  );
-
-  console.log(`Offer ${offer.id} sent to driver ${best.driverId} for order ${orderId}`);
+  await createOfferForDriver(orderId, delivery, best.driverId, best);
 }
 
 const worker = new Worker(
   DISPATCH_QUEUE,
-  async (job) => {
-    await dispatchOrder(job.data.orderId as string);
-  },
+  async (job) => { await dispatchOrder(job.data.orderId as string); },
   {
     connection: redis as unknown as import("bullmq").ConnectionOptions,
     concurrency: 5,
@@ -192,6 +187,7 @@ async function pollQueuedOrders() {
 
   if (unassigned.length >= ORTOOLS_THRESHOLD) {
     await batchDispatchWithOrtools(unassigned).catch(console.error);
+    return; // OR-Tools handles all unassigned orders this cycle
   }
 
   for (const order of orders) {
@@ -200,31 +196,67 @@ async function pollQueuedOrders() {
 }
 
 async function batchDispatchWithOrtools(
-  orders: Array<{ id: string; restaurant: { lat: number; lng: number }; deliveryLat: number; deliveryLng: number }>,
+  orders: Array<{
+    id: string;
+    restaurant: { lat: number; lng: number };
+    deliveryLat: number;
+    deliveryLng: number;
+    delivery: { id: string; offers: Array<{ driverId: string; status: OfferStatus }> } | null;
+  }>,
 ) {
   const drivers = await prisma.driverProfile.findMany({ where: { isOnline: true } });
   if (drivers.length === 0 || orders.length === 0) return;
 
+  // Build cost matrix and cache route data for later offer creation
   const costMatrix: number[][] = [];
+  const routeCache = new Map<string, Map<string, OfferRouteData>>();
+
   for (const order of orders) {
     const row: number[] = [];
+    const orderRoutes = new Map<string, OfferRouteData>();
+
     for (const driver of drivers) {
+      const rejectedDriverIds = new Set(
+        order.delivery?.offers
+          .filter((o) => o.status === OfferStatus.REJECTED || o.status === OfferStatus.EXPIRED)
+          .map((o) => o.driverId) ?? [],
+      );
+      if (rejectedDriverIds.has(driver.id)) {
+        row.push(1e9);
+        continue;
+      }
+
       const loc = await getDriverLocation(driver.id);
       if (!loc) {
         row.push(1e9);
         continue;
       }
       try {
-        const route = await getRoute(
+        const toRestaurant = await getRoute(
           { lat: loc.lat, lng: loc.lng },
           { lat: order.restaurant.lat, lng: order.restaurant.lng },
         );
-        row.push(route.distanceMeters);
+        const toCustomer = await getRoute(
+          { lat: order.restaurant.lat, lng: order.restaurant.lng },
+          { lat: order.deliveryLat, lng: order.deliveryLng },
+        );
+        const totalDist = toRestaurant.distanceMeters + toCustomer.distanceMeters;
+        const data: OfferRouteData = {
+          distToRestaurant: toRestaurant.distanceMeters,
+          distToCustomer: toCustomer.distanceMeters,
+          totalDist,
+          duration: toRestaurant.durationSeconds + toCustomer.durationSeconds,
+          reward: calculateReward(totalDist / 1000),
+          score: scoreDriver(toRestaurant.distanceMeters, toCustomer.distanceMeters, driver.rating),
+        };
+        row.push(toRestaurant.distanceMeters);
+        orderRoutes.set(driver.id, data);
       } catch {
         row.push(1e9);
       }
     }
     costMatrix.push(row);
+    routeCache.set(order.id, orderRoutes);
   }
 
   const assignments = await matchWithOrtools({
@@ -233,18 +265,18 @@ async function batchDispatchWithOrtools(
     costMatrix,
   });
 
-  for (const order of orders) {
-    const driverId = assignments.get(order.id);
-    if (driverId) {
-      console.log(`OR-Tools assigned order ${order.id} to driver ${driverId}`);
-    }
+  for (const [orderId, driverId] of assignments) {
+    if (!driverId) continue;
+    const order = orders.find((o) => o.id === orderId);
+    const routeData = routeCache.get(orderId)?.get(driverId);
+    if (!order?.delivery || !routeData) continue;
+
+    await createOfferForDriver(orderId, order.delivery, driverId, routeData).catch(console.error);
   }
 }
 
 const interval = Number(process.env.DISPATCH_INTERVAL_MS ?? 5000);
-setInterval(() => {
-  pollQueuedOrders().catch(console.error);
-}, interval);
+setInterval(() => { pollQueuedOrders().catch(console.error); }, interval);
 
 console.log(`Dispatcher worker started (poll every ${interval}ms)`);
 

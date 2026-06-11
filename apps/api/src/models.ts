@@ -1,5 +1,6 @@
 import type {
   Delivery,
+  DriverLocation,
   DriverOffer,
   DriverProfile,
   MenuItem,
@@ -9,10 +10,6 @@ import type {
   Restaurant,
   UserRole,
 } from "@uber-like/database";
-
-// GraphQL の各 type に対応する「resolver の親オブジェクト」型。
-// リレーションは optional にし、ロードされていない場合は各 type の
-// field resolver が遅延フェッチする。
 
 export interface UserModel {
   id: string;
@@ -30,21 +27,15 @@ export interface DriverInfoModel {
 }
 
 export type RestaurantModel = Restaurant & { menuItems?: MenuItem[] };
-
 export type OrderItemModel = OrderItem & { menuItem: MenuItem };
-
 export type DeliveryModel = Delivery & {
-  driver?: DriverProfile | null;
+  driver?: (DriverProfile & { locations?: DriverLocation[] }) | null;
   order?: OrderModel;
 };
-
 export type OrderModel = Order & {
   items?: OrderItemModel[];
   restaurant?: RestaurantModel;
   delivery?: DeliveryModel | null;
   rating?: Rating | null;
 };
-
-export type OfferModel = DriverOffer & {
-  delivery: DeliveryModel & { order: OrderModel };
-};
+export type OfferModel = DriverOffer & { delivery: DeliveryModel & { order: OrderModel } };

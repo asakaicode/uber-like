@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@uber-like/database": "workspace:*",
+    "@uber-like/geo": "workspace:*",
     "@uber-like/shared": "workspace:*",
     "bullmq": "^5.53.2",
     "ioredis": "^5.6.1"
