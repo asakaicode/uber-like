@@ -11,6 +11,10 @@ export interface JwtPayload {
   driverId?: string;
 }
 
+export interface Context {
+  user: JwtPayload | null;
+}
+
 export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }

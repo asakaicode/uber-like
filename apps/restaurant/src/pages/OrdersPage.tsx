@@ -1,39 +1,77 @@
 import { useEffect } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { gql, formatPrice, formatStatus, useInfiniteScroll, WS_URL, getToken, getRestaurantId } from "@uber-like/web";
+import { gql, formatPrice, formatStatus, printDocument, useInfiniteScroll, WS_URL, getToken, getRestaurantId } from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
 import { createClient } from "graphql-ws";
 
-interface Order {
-  id: string;
-  status: string;
-  totalAmount: number;
-  createdAt: string;
-  deliveryAddress: string;
-  delivery?: { driver?: { name: string; rating: number } };
-  items: Array<{ quantity: number; menuItem: { name: string } }>;
-}
-
-const ORDERS_QUERY = `query RestaurantOrders($first: Int, $after: String, $status: OrderStatus) {
-  restaurantOrders(first: $first, after: $after, status: $status) {
-    edges { cursor node {
-      id status totalAmount createdAt deliveryAddress
-      delivery { driver { name rating } }
-      items { quantity menuItem { name } }
-    }}
-    pageInfo { hasNextPage endCursor }
+const ORDERS_QUERY = graphql(`
+  query RestaurantOrders($first: Int, $after: String, $status: OrderStatus) {
+    restaurantOrders(first: $first, after: $after, status: $status) {
+      edges {
+        cursor
+        node {
+          id
+          status
+          totalAmount
+          createdAt
+          deliveryAddress
+          delivery {
+            id
+            driver {
+              id
+              name
+              rating
+            }
+          }
+          items {
+            id
+            quantity
+            menuItem {
+              name
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
   }
-}`;
+`);
+
+const NEW_ORDER_SUBSCRIPTION = graphql(`
+  subscription NewOrder($restaurantId: ID!) {
+    newOrder(restaurantId: $restaurantId) {
+      id
+    }
+  }
+`);
+
+const ACCEPT_ORDER_MUTATION = graphql(`
+  mutation AcceptOrder($orderId: ID!) {
+    acceptOrder(orderId: $orderId) {
+      id
+      status
+    }
+  }
+`);
+
+const REJECT_ORDER_MUTATION = graphql(`
+  mutation RejectOrder($orderId: ID!) {
+    rejectOrder(orderId: $orderId) {
+      id
+      status
+    }
+  }
+`);
 
 export function OrdersPage() {
   const queryClient = useQueryClient();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch } = useInfiniteQuery({
     queryKey: ["restaurantOrders"],
-    queryFn: ({ pageParam }) =>
-      gql<{ restaurantOrders: { edges: Array<{ cursor: string; node: Order }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }>(
-        ORDERS_QUERY,
-        { first: 20, after: pageParam },
-      ),
+    queryFn: ({ pageParam }) => gql(ORDERS_QUERY, { first: 20, after: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) =>
       last.restaurantOrders.pageInfo.hasNextPage ? last.restaurantOrders.pageInfo.endCursor : undefined,
@@ -51,7 +89,7 @@ export function OrdersPage() {
     });
     const dispose = client.subscribe(
       {
-        query: `subscription($restaurantId: ID!) { newOrder(restaurantId: $restaurantId) { id } }`,
+        query: printDocument(NEW_ORDER_SUBSCRIPTION),
         variables: { restaurantId },
       },
       {
@@ -64,12 +102,12 @@ export function OrdersPage() {
   }, [refetch]);
 
   async function acceptOrder(orderId: string) {
-    await gql(`mutation($orderId: ID!) { acceptOrder(orderId: $orderId) { id } }`, { orderId });
+    await gql(ACCEPT_ORDER_MUTATION, { orderId });
     queryClient.invalidateQueries({ queryKey: ["restaurantOrders"] });
   }
 
   async function rejectOrder(orderId: string) {
-    await gql(`mutation($orderId: ID!) { rejectOrder(orderId: $orderId) { id } }`, { orderId });
+    await gql(REJECT_ORDER_MUTATION, { orderId });
     queryClient.invalidateQueries({ queryKey: ["restaurantOrders"] });
   }
 
@@ -88,8 +126,8 @@ export function OrdersPage() {
           </div>
           <p>{order.deliveryAddress}</p>
           <ul>
-            {order.items.map((item, i) => (
-              <li key={i}>{item.menuItem.name} x{item.quantity}</li>
+            {order.items.map((item) => (
+              <li key={item.id}>{item.menuItem.name} x{item.quantity}</li>
             ))}
           </ul>
           {order.delivery?.driver && (

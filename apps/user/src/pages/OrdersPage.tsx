@@ -1,34 +1,35 @@
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { gql, formatPrice, formatStatus, useInfiniteScroll } from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
 
-interface Order {
-  id: string;
-  status: string;
-  totalAmount: number;
-  createdAt: string;
-  restaurant: { name: string };
-}
-
-interface OrdersData {
-  orders: {
-    edges: Array<{ cursor: string; node: Order }>;
-    pageInfo: { hasNextPage: boolean; endCursor: string | null };
-  };
-}
-
-const ORDERS_QUERY = `query Orders($first: Int, $after: String) {
-  orders(first: $first, after: $after) {
-    edges { cursor node { id status totalAmount createdAt restaurant { name } } }
-    pageInfo { hasNextPage endCursor }
+const ORDERS_QUERY = graphql(`
+  query Orders($first: Int, $after: String) {
+    orders(first: $first, after: $after) {
+      edges {
+        cursor
+        node {
+          id
+          status
+          totalAmount
+          createdAt
+          restaurant {
+            name
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
   }
-}`;
+`);
 
 export function OrdersPage() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ["orders"],
-    queryFn: ({ pageParam }) =>
-      gql<OrdersData>(ORDERS_QUERY, { first: 20, after: pageParam }),
+    queryFn: ({ pageParam }) => gql(ORDERS_QUERY, { first: 20, after: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) =>
       last.orders.pageInfo.hasNextPage ? last.orders.pageInfo.endCursor : undefined,

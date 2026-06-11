@@ -75,6 +75,7 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     status: String!
     driver: DriverInfo
+    order: Order!
     distanceToRestaurant: Float
     distanceToCustomer: Float
     totalDistance: Float
@@ -186,6 +187,6 @@ export const typeDefs = /* GraphQL */ `
     newOrder(restaurantId: ID!): Order!
     driverOfferReceived: DriverOffer!
     driverAssigned(orderId: ID!): Order!
-    driverLocationUpdated(deliveryId: ID!): DriverInfo!
+    driverLocationUpdated(deliveryId: ID!): DriverInfo
   }
 `;

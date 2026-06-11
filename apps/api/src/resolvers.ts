@@ -8,13 +8,13 @@ import {
   prisma,
 } from "@uber-like/database";
 import { PUBSUB_CHANNELS } from "@uber-like/shared";
+import type { Resolvers } from "./generated/resolver-types.js";
+import type { DriverInfoModel } from "./models.js";
 import type { JwtPayload } from "./lib/auth.js";
 import { requireAuth, requireRole, signToken } from "./lib/auth.js";
-import { calculateReward, getMultiLegRoute, getRoute } from "./lib/osrm.js";
 import {
   buildConnection,
   clampPageSize,
-  encodeCursor,
   orderAfterFilter,
   offerAfterFilter,
 } from "./lib/pagination.js";
@@ -36,15 +36,20 @@ const DateTimeScalar = new GraphQLScalarType({
   },
 });
 
-export interface Context {
-  user: JwtPayload | null;
-}
-
 const orderInclude = {
   items: { include: { menuItem: true } },
   restaurant: true,
   delivery: { include: { driver: true } },
   rating: true,
+} as const;
+
+const offerInclude = {
+  delivery: {
+    include: {
+      order: { include: { restaurant: true, items: { include: { menuItem: true } } } },
+    },
+  },
+  driver: true,
 } as const;
 
 async function getDriverLocation(driverId: string) {
@@ -54,7 +59,7 @@ async function getDriverLocation(driverId: string) {
   });
 }
 
-async function mapDriverInfo(driverId: string) {
+async function getDriverInfo(driverId: string): Promise<DriverInfoModel | null> {
   const driver = await prisma.driverProfile.findUnique({ where: { id: driverId } });
   if (!driver) return null;
   const loc = await getDriverLocation(driverId);
@@ -68,37 +73,17 @@ async function mapDriverInfo(driverId: string) {
   };
 }
 
-async function mapOrder(order: Awaited<ReturnType<typeof prisma.order.findUnique>> & object) {
-  const o = order as NonNullable<typeof order> & {
-    delivery?: { driverId?: string | null; driver?: { id: string; name: string; rating: number } | null } | null;
-  };
-  let driverInfo = null;
-  if (o.delivery?.driver) {
-    const loc = o.delivery.driverId
-      ? await getDriverLocation(o.delivery.driverId)
-      : null;
-    driverInfo = {
-      id: o.delivery.driver.id,
-      name: o.delivery.driver.name,
-      rating: o.delivery.driver.rating,
-      lat: loc?.lat ?? null,
-      lng: loc?.lng ?? null,
-      heading: loc?.heading ?? null,
-    };
-  }
-  return {
-    ...o,
-    delivery: o.delivery
-      ? { ...o.delivery, driver: driverInfo }
-      : null,
-  };
+async function requireDriverInfo(driverId: string): Promise<DriverInfoModel> {
+  const info = await getDriverInfo(driverId);
+  if (!info) throw new Error("Driver not found");
+  return info;
 }
 
-export const resolvers = {
+export const resolvers: Resolvers = {
   DateTime: DateTimeScalar,
 
   Query: {
-    me: (_: unknown, __: unknown, ctx: Context) => {
+    me: (_, __, ctx) => {
       if (!ctx.user) return null;
       return prisma.user.findUnique({
         where: { id: ctx.user.userId },
@@ -113,14 +98,14 @@ export const resolvers = {
       });
     },
 
-    restaurant: async (_: unknown, { id }: { id: string }) => {
+    restaurant: async (_, { id }) => {
       return prisma.restaurant.findUnique({
         where: { id },
         include: { menuItems: true },
       });
     },
 
-    order: async (_: unknown, { id }: { id: string }, ctx: Context) => {
+    order: async (_, { id }, ctx) => {
       const user = requireAuth(ctx);
       const order = await prisma.order.findUnique({
         where: { id },
@@ -133,68 +118,44 @@ export const resolvers = {
       if (user.role === UserRole.RESTAURANT && order.restaurantId !== user.restaurantId) {
         throw new Error("Forbidden");
       }
-      return mapOrder(order);
+      return order;
     },
 
-    orders: async (
-      _: unknown,
-      args: { first?: number; after?: string; status?: OrderStatus },
-      ctx: Context,
-    ) => {
+    orders: async (_, args, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.CUSTOMER);
       const size = clampPageSize(args.first);
-      const where = {
-        customerId: user.customerId!,
-        ...(args.status ? { status: args.status } : {}),
-        ...orderAfterFilter(args.after),
-      };
       const items = await prisma.order.findMany({
-        where,
+        where: {
+          customerId: user.customerId!,
+          ...(args.status ? { status: args.status } : {}),
+          ...orderAfterFilter(args.after),
+        },
         include: orderInclude,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: size + 1,
       });
-      const conn = buildConnection(items, size);
-      const mapped = await Promise.all(conn.edges.map(async (e) => ({
-        cursor: e.cursor,
-        node: await mapOrder(e.node),
-      })));
-      return { edges: mapped, pageInfo: conn.pageInfo };
+      return buildConnection(items, size);
     },
 
-    restaurantOrders: async (
-      _: unknown,
-      args: { first?: number; after?: string; status?: OrderStatus },
-      ctx: Context,
-    ) => {
+    restaurantOrders: async (_, args, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.RESTAURANT);
       const size = clampPageSize(args.first);
-      const where = {
-        restaurantId: user.restaurantId!,
-        ...(args.status ? { status: args.status } : {}),
-        ...orderAfterFilter(args.after),
-      };
       const items = await prisma.order.findMany({
-        where,
+        where: {
+          restaurantId: user.restaurantId!,
+          ...(args.status ? { status: args.status } : {}),
+          ...orderAfterFilter(args.after),
+        },
         include: orderInclude,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: size + 1,
       });
-      const conn = buildConnection(items, size);
-      const mapped = await Promise.all(conn.edges.map(async (e) => ({
-        cursor: e.cursor,
-        node: await mapOrder(e.node),
-      })));
-      return { edges: mapped, pageInfo: conn.pageInfo };
+      return buildConnection(items, size);
     },
 
-    myOffers: async (
-      _: unknown,
-      args: { first?: number; after?: string; status?: OfferStatus },
-      ctx: Context,
-    ) => {
+    myOffers: async (_, args, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       const size = clampPageSize(args.first);
@@ -204,31 +165,17 @@ export const resolvers = {
           ...(args.status ? { status: args.status } : {}),
           ...offerAfterFilter(args.after),
         },
-        include: {
-          delivery: {
-            include: {
-              order: { include: { restaurant: true, items: { include: { menuItem: true } } } },
-            },
-          },
-          driver: true,
-        },
+        include: offerInclude,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: size + 1,
       });
-      const conn = buildConnection(items, size);
-      return {
-        edges: conn.edges.map((e) => ({
-          cursor: e.cursor,
-          node: mapOffer(e.node),
-        })),
-        pageInfo: conn.pageInfo,
-      };
+      return buildConnection(items, size);
     },
 
-    myActiveDelivery: async (_: unknown, __: unknown, ctx: Context) => {
+    myActiveDelivery: async (_, __, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
-      const delivery = await prisma.delivery.findFirst({
+      return prisma.delivery.findFirst({
         where: {
           driverId: user.driverId!,
           status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP] },
@@ -238,17 +185,11 @@ export const resolvers = {
           driver: true,
         },
       });
-      if (!delivery) return null;
-      const driver = await mapDriverInfo(delivery.driverId!);
-      return { ...delivery, driver };
     },
   },
 
   Mutation: {
-    register: async (
-      _: unknown,
-      args: { email: string; password: string; name: string; role: UserRole },
-    ) => {
+    register: async (_, args) => {
       const existing = await prisma.user.findUnique({ where: { email: args.email } });
       if (existing) throw new Error("Email already registered");
       const passwordHash = await bcrypt.hash(args.password, 10);
@@ -293,7 +234,7 @@ export const resolvers = {
       };
     },
 
-    login: async (_: unknown, args: { email: string; password: string }) => {
+    login: async (_, args) => {
       const user = await prisma.user.findUnique({
         where: { email: args.email },
         include: {
@@ -321,19 +262,7 @@ export const resolvers = {
       };
     },
 
-    createOrder: async (
-      _: unknown,
-      { input }: {
-        input: {
-          restaurantId: string;
-          items: Array<{ menuItemId: string; quantity: number }>;
-          deliveryAddress: string;
-          deliveryLat: number;
-          deliveryLng: number;
-        };
-      },
-      ctx: Context,
-    ) => {
+    createOrder: async (_, { input }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.CUSTOMER);
       const menuItems = await prisma.menuItem.findMany({
@@ -376,10 +305,10 @@ export const resolvers = {
         orderId: order.id,
         restaurantId: order.restaurantId,
       });
-      return mapOrder(order);
+      return order;
     },
 
-    acceptOrder: async (_: unknown, { orderId }: { orderId: string }, ctx: Context) => {
+    acceptOrder: async (_, { orderId }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.RESTAURANT);
       const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -402,10 +331,10 @@ export const resolvers = {
         customerId: order.customerId,
         restaurantId: order.restaurantId,
       });
-      return mapOrder(updated);
+      return updated;
     },
 
-    rejectOrder: async (_: unknown, { orderId }: { orderId: string }, ctx: Context) => {
+    rejectOrder: async (_, { orderId }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.RESTAURANT);
       const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -424,24 +353,20 @@ export const resolvers = {
         customerId: order.customerId,
         restaurantId: order.restaurantId,
       });
-      return mapOrder(updated);
+      return updated;
     },
 
-    setDriverOnline: async (_: unknown, { isOnline }: { isOnline: boolean }, ctx: Context) => {
+    setDriverOnline: async (_, { isOnline }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       const driver = await prisma.driverProfile.update({
         where: { id: user.driverId! },
         data: { isOnline },
       });
-      return mapDriverInfo(driver.id);
+      return requireDriverInfo(driver.id);
     },
 
-    updateDriverLocation: async (
-      _: unknown,
-      args: { lat: number; lng: number; heading?: number },
-      ctx: Context,
-    ) => {
+    updateDriverLocation: async (_, args, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       await prisma.driverLocation.create({
@@ -467,14 +392,10 @@ export const resolvers = {
           heading: args.heading ?? 0,
         });
       }
-      return mapDriverInfo(user.driverId!);
+      return requireDriverInfo(user.driverId!);
     },
 
-    respondToOffer: async (
-      _: unknown,
-      { offerId, accept }: { offerId: string; accept: boolean },
-      ctx: Context,
-    ) => {
+    respondToOffer: async (_, { offerId, accept }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       const offer = await prisma.driverOffer.findUnique({
@@ -498,17 +419,11 @@ export const resolvers = {
       }
 
       if (!accept) {
-        const updated = await prisma.driverOffer.update({
+        return prisma.driverOffer.update({
           where: { id: offerId },
           data: { status: OfferStatus.REJECTED },
-          include: {
-            delivery: {
-              include: { order: { include: { restaurant: true, items: { include: { menuItem: true } } } } },
-            },
-            driver: true,
-          },
+          include: offerInclude,
         });
-        return mapOffer(updated);
       }
 
       const order = offer.delivery.order;
@@ -536,14 +451,9 @@ export const resolvers = {
           where: { id: order.id },
           data: { status: OrderStatus.DRIVER_ASSIGNED },
         });
-        return tx.driverOffer.findUnique({
+        return tx.driverOffer.findUniqueOrThrow({
           where: { id: offerId },
-          include: {
-            delivery: {
-              include: { order: { include: { restaurant: true, items: { include: { menuItem: true } } } } },
-            },
-            driver: true,
-          },
+          include: offerInclude,
         });
       });
 
@@ -561,10 +471,10 @@ export const resolvers = {
         customerId: order.customerId,
         restaurantId: order.restaurantId,
       });
-      return mapOffer(updatedOffer!);
+      return updatedOffer;
     },
 
-    confirmPickup: async (_: unknown, { deliveryId }: { deliveryId: string }, ctx: Context) => {
+    confirmPickup: async (_, { deliveryId }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       const delivery = await prisma.delivery.findUnique({
@@ -583,7 +493,7 @@ export const resolvers = {
           where: { id: delivery.orderId },
           data: { status: OrderStatus.PICKED_UP },
         });
-        return tx.delivery.findUnique({
+        return tx.delivery.findUniqueOrThrow({
           where: { id: deliveryId },
           include: { order: true, driver: true },
         });
@@ -595,11 +505,10 @@ export const resolvers = {
         customerId: delivery.order.customerId,
         restaurantId: delivery.order.restaurantId,
       });
-      const driver = await mapDriverInfo(user.driverId!);
-      return { ...updated!, driver };
+      return updated;
     },
 
-    confirmDelivery: async (_: unknown, { deliveryId }: { deliveryId: string }, ctx: Context) => {
+    confirmDelivery: async (_, { deliveryId }, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.DRIVER);
       const delivery = await prisma.delivery.findUnique({
@@ -618,7 +527,7 @@ export const resolvers = {
           where: { id: delivery.orderId },
           data: { status: OrderStatus.DELIVERED },
         });
-        return tx.delivery.findUnique({
+        return tx.delivery.findUniqueOrThrow({
           where: { id: deliveryId },
           include: { order: true, driver: true },
         });
@@ -630,15 +539,10 @@ export const resolvers = {
         customerId: delivery.order.customerId,
         restaurantId: delivery.order.restaurantId,
       });
-      const driver = await mapDriverInfo(user.driverId!);
-      return { ...updated!, driver };
+      return updated;
     },
 
-    rateDriver: async (
-      _: unknown,
-      args: { orderId: string; score: number; comment?: string },
-      ctx: Context,
-    ) => {
+    rateDriver: async (_, args, ctx) => {
       const user = requireAuth(ctx);
       requireRole(user, UserRole.CUSTOMER);
       if (args.score < 1 || args.score > 5) throw new Error("Score must be 1-5");
@@ -683,35 +587,31 @@ export const resolvers = {
 
   Subscription: {
     orderStatusChanged: {
-      subscribe: (_: unknown, { orderId }: { orderId: string }) =>
+      subscribe: (_, { orderId }) =>
         subscribeFiltered(PUBSUB_CHANNELS.ORDER_STATUS_CHANGED, (payload) => {
           const p = payload as { orderId: string };
           return p.orderId === orderId;
         }),
-      resolve: async (payload: { orderId: string }) => {
-        const order = await prisma.order.findUnique({
+      resolve: (payload: { orderId: string }) =>
+        prisma.order.findUniqueOrThrow({
           where: { id: payload.orderId },
           include: orderInclude,
-        });
-        return mapOrder(order!);
-      },
+        }),
     },
     newOrder: {
-      subscribe: (_: unknown, { restaurantId }: { restaurantId: string }) =>
+      subscribe: (_, { restaurantId }) =>
         subscribeFiltered(PUBSUB_CHANNELS.NEW_ORDER, (payload) => {
           const p = payload as { restaurantId: string };
           return p.restaurantId === restaurantId;
         }),
-      resolve: async (payload: { orderId: string }) => {
-        const order = await prisma.order.findUnique({
+      resolve: (payload: { orderId: string }) =>
+        prisma.order.findUniqueOrThrow({
           where: { id: payload.orderId },
           include: orderInclude,
-        });
-        return mapOrder(order!);
-      },
+        }),
     },
     driverOfferReceived: {
-      subscribe: (_: unknown, __: unknown, ctx: Context) => {
+      subscribe: (_, __, ctx) => {
         const user = requireAuth(ctx);
         requireRole(user, UserRole.DRIVER);
         return subscribeFiltered(PUBSUB_CHANNELS.DRIVER_OFFER, (payload) => {
@@ -719,35 +619,26 @@ export const resolvers = {
           return p.driverId === user.driverId;
         });
       },
-      resolve: async (payload: { offerId: string }) => {
-        const offer = await prisma.driverOffer.findUnique({
+      resolve: (payload: { offerId: string }) =>
+        prisma.driverOffer.findUniqueOrThrow({
           where: { id: payload.offerId },
-          include: {
-            delivery: {
-              include: { order: { include: { restaurant: true, items: { include: { menuItem: true } } } } },
-            },
-            driver: true,
-          },
-        });
-        return mapOffer(offer!);
-      },
+          include: offerInclude,
+        }),
     },
     driverAssigned: {
-      subscribe: (_: unknown, { orderId }: { orderId: string }) =>
+      subscribe: (_, { orderId }) =>
         subscribeFiltered(PUBSUB_CHANNELS.DRIVER_ASSIGNED, (payload) => {
           const p = payload as { orderId: string };
           return p.orderId === orderId;
         }),
-      resolve: async (payload: { orderId: string }) => {
-        const order = await prisma.order.findUnique({
+      resolve: (payload: { orderId: string }) =>
+        prisma.order.findUniqueOrThrow({
           where: { id: payload.orderId },
           include: orderInclude,
-        });
-        return mapOrder(order!);
-      },
+        }),
     },
     driverLocationUpdated: {
-      subscribe: (_: unknown, { deliveryId }: { deliveryId: string }) =>
+      subscribe: (_, { deliveryId }) =>
         subscribeFiltered(PUBSUB_CHANNELS.DRIVER_LOCATION, (payload) => {
           const p = payload as { deliveryId: string };
           return p.deliveryId === deliveryId;
@@ -755,8 +646,10 @@ export const resolvers = {
       resolve: async (payload: { deliveryId: string; lat: number; lng: number; heading: number }) => {
         const delivery = await prisma.delivery.findUnique({ where: { id: payload.deliveryId } });
         if (!delivery?.driverId) return null;
+        const info = await getDriverInfo(delivery.driverId);
+        if (!info) return null;
         return {
-          ...(await mapDriverInfo(delivery.driverId)),
+          ...info,
           lat: payload.lat,
           lng: payload.lng,
           heading: payload.heading,
@@ -765,32 +658,62 @@ export const resolvers = {
     },
   },
 
+  Order: {
+    items: (parent) =>
+      parent.items ??
+      prisma.orderItem.findMany({
+        where: { orderId: parent.id },
+        include: { menuItem: true },
+      }),
+    restaurant: (parent) =>
+      parent.restaurant ??
+      prisma.restaurant.findUniqueOrThrow({ where: { id: parent.restaurantId } }),
+    delivery: (parent) =>
+      parent.delivery !== undefined
+        ? parent.delivery
+        : prisma.delivery.findUnique({ where: { orderId: parent.id } }),
+    rating: (parent) =>
+      parent.rating !== undefined
+        ? parent.rating
+        : prisma.rating.findUnique({ where: { orderId: parent.id } }),
+  },
+
+  Restaurant: {
+    menuItems: (parent) =>
+      parent.menuItems ?? prisma.menuItem.findMany({ where: { restaurantId: parent.id } }),
+  },
+
+  Delivery: {
+    driver: async (parent) => {
+      if (!parent.driverId) return null;
+      const profile =
+        parent.driver ??
+        (await prisma.driverProfile.findUnique({ where: { id: parent.driverId } }));
+      if (!profile) return null;
+      const loc = await getDriverLocation(parent.driverId);
+      return {
+        id: profile.id,
+        name: profile.name,
+        rating: profile.rating,
+        lat: loc?.lat ?? null,
+        lng: loc?.lng ?? null,
+        heading: loc?.heading ?? null,
+      };
+    },
+    order: (parent) =>
+      parent.order ?? prisma.order.findUniqueOrThrow({ where: { id: parent.orderId } }),
+  },
+
   DriverOffer: {
-    order: (parent: { delivery: { order: unknown } }) => parent.delivery.order,
-    distanceToRestaurant: (parent: { delivery: { distanceToRestaurant: number | null } }) =>
-      parent.delivery.distanceToRestaurant,
-    distanceToCustomer: (parent: { delivery: { distanceToCustomer: number | null } }) =>
-      parent.delivery.distanceToCustomer,
-    totalDistance: (parent: { delivery: { totalDistance: number | null } }) =>
-      parent.delivery.totalDistance,
-    estimatedMinutes: (parent: { delivery: { estimatedMinutes: number | null } }) =>
-      parent.delivery.estimatedMinutes,
-    reward: (parent: { delivery: { reward: number | null } }) => parent.delivery.reward,
+    order: (parent) => parent.delivery.order,
+    distanceToRestaurant: (parent) => parent.delivery.distanceToRestaurant,
+    distanceToCustomer: (parent) => parent.delivery.distanceToCustomer,
+    totalDistance: (parent) => parent.delivery.totalDistance,
+    estimatedMinutes: (parent) => parent.delivery.estimatedMinutes,
+    reward: (parent) => parent.delivery.reward,
     routeGeometry: () => null,
   },
 };
-
-function mapOffer(offer: {
-  id: string;
-  status: OfferStatus;
-  priority: number;
-  expiresAt: Date;
-  createdAt: Date;
-  delivery: unknown;
-  driver?: unknown;
-}) {
-  return offer;
-}
 
 async function* subscribeFiltered(
   channel: string,
@@ -833,5 +756,3 @@ async function* subscribeFiltered(
     subscriber.disconnect();
   }
 }
-
-export { getRoute, getMultiLegRoute, calculateReward, mapDriverInfo };

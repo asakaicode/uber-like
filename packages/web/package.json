@@ -6,9 +6,11 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./styles": "./src/styles.css"
+    "./styles": "./src/styles.css",
+    "./gql": "./src/gql/index.ts"
   },
   "dependencies": {
+    "@graphql-typed-document-node/core": "^3.2.0",
     "@tanstack/react-query": "^5.80.6",
     "classnames": "^2.5.1",
     "graphql": "^16.11.0",

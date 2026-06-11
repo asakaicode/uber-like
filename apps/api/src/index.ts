@@ -3,7 +3,7 @@ import { createYoga } from "graphql-yoga";
 import { useServer } from "graphql-ws/use/ws";
 import { WebSocketServer } from "ws";
 import { buildContext, schema } from "./context.js";
-import type { Context } from "./resolvers.js";
+import type { Context } from "./lib/auth.js";
 import { prisma } from "@uber-like/database";
 
 const port = Number(process.env.API_PORT ?? 4000);

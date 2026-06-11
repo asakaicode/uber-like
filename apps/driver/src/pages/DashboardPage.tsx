@@ -2,46 +2,151 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { gql, formatDistance, formatPrice, formatStatus, useInfiniteScroll, WS_URL, getToken, classNames } from "@uber-like/web";
+import {
+  gql,
+  formatDistance,
+  formatPrice,
+  formatStatus,
+  printDocument,
+  useInfiniteScroll,
+  WS_URL,
+  getToken,
+  classNames,
+  type ResultOf,
+} from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
 import { createClient } from "graphql-ws";
 
-interface Offer {
-  id: string;
-  status: string;
-  expiresAt: string;
-  totalDistance: number | null;
-  estimatedMinutes: number | null;
-  reward: number | null;
-  order: {
-    id: string;
-    deliveryLat: number;
-    deliveryLng: number;
-    restaurant: { name: string; lat: number; lng: number };
-  };
-}
-
-const OFFER_FIELDS = `
-  id status expiresAt totalDistance estimatedMinutes reward
-  order { id deliveryLat deliveryLng restaurant { name lat lng } }
-`;
-
-const OFFERS_QUERY = `query PendingOffers($first: Int, $status: OfferStatus) {
-  myOffers(first: $first, status: $status) {
-    edges { node { ${OFFER_FIELDS} } }
+const OFFER_FIELDS = graphql(`
+  fragment OfferFields on DriverOffer {
+    id
+    status
+    expiresAt
+    totalDistance
+    estimatedMinutes
+    reward
+    order {
+      id
+      deliveryLat
+      deliveryLng
+      restaurant {
+        name
+        lat
+        lng
+      }
+    }
   }
-}`;
+`);
 
-interface ActiveDelivery {
-  id: string;
-  status: string;
-  order: {
-    id: string;
-    status: string;
-    deliveryLat: number;
-    deliveryLng: number;
-    restaurant: { name: string; lat: number; lng: number };
-  };
-}
+const PENDING_OFFERS_QUERY = graphql(`
+  query PendingOffers($first: Int, $status: OfferStatus) {
+    myOffers(first: $first, status: $status) {
+      edges {
+        node {
+          ...OfferFields
+        }
+      }
+    }
+  }
+`);
+
+const OFFER_HISTORY_QUERY = graphql(`
+  query OfferHistory($first: Int, $after: String) {
+    myOffers(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          status
+          createdAt
+          order {
+            id
+            restaurant {
+              name
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`);
+
+const DRIVER_OFFER_SUBSCRIPTION = graphql(`
+  subscription DriverOfferReceived {
+    driverOfferReceived {
+      ...OfferFields
+    }
+  }
+`);
+
+const ACTIVE_DELIVERY_QUERY = graphql(`
+  query MyActiveDelivery {
+    myActiveDelivery {
+      id
+      status
+      order {
+        id
+        status
+        deliveryLat
+        deliveryLng
+        restaurant {
+          name
+          lat
+          lng
+        }
+      }
+    }
+  }
+`);
+
+const SET_ONLINE_MUTATION = graphql(`
+  mutation SetDriverOnline($isOnline: Boolean!) {
+    setDriverOnline(isOnline: $isOnline) {
+      id
+    }
+  }
+`);
+
+const UPDATE_LOCATION_MUTATION = graphql(`
+  mutation UpdateDriverLocation($lat: Float!, $lng: Float!, $heading: Float) {
+    updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) {
+      id
+    }
+  }
+`);
+
+const RESPOND_TO_OFFER_MUTATION = graphql(`
+  mutation RespondToOffer($offerId: ID!, $accept: Boolean!) {
+    respondToOffer(offerId: $offerId, accept: $accept) {
+      id
+      status
+    }
+  }
+`);
+
+const CONFIRM_PICKUP_MUTATION = graphql(`
+  mutation ConfirmPickup($deliveryId: ID!) {
+    confirmPickup(deliveryId: $deliveryId) {
+      id
+      status
+    }
+  }
+`);
+
+const CONFIRM_DELIVERY_MUTATION = graphql(`
+  mutation ConfirmDelivery($deliveryId: ID!) {
+    confirmDelivery(deliveryId: $deliveryId) {
+      id
+      status
+    }
+  }
+`);
+
+type Offer = ResultOf<typeof OFFER_FIELDS>;
+type ActiveDelivery = NonNullable<ResultOf<typeof ACTIVE_DELIVERY_QUERY>["myActiveDelivery"]>;
 
 const driverIcon = (heading: number) =>
   L.divIcon({
@@ -71,10 +176,7 @@ export function DashboardPage() {
   const watchId = useRef<number | null>(null);
 
   async function loadPendingOffer() {
-    const data = await gql<{ myOffers: { edges: Array<{ node: Offer }> } }>(
-      OFFERS_QUERY,
-      { first: 1, status: "PENDING" },
-    );
+    const data = await gql(PENDING_OFFERS_QUERY, { first: 1, status: "PENDING" });
     const offer = data.myOffers.edges[0]?.node ?? null;
     if (offer && new Date(offer.expiresAt) > new Date()) {
       setPendingOffer(offer);
@@ -83,16 +185,7 @@ export function DashboardPage() {
 
   const { data: offersData, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["myOffers"],
-    queryFn: ({ pageParam }) =>
-      gql<{ myOffers: { edges: Array<{ node: { id: string; status: string; createdAt: string; order: { restaurant: { name: string } } } }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }>(
-        `query($first: Int, $after: String) {
-          myOffers(first: $first, after: $after) {
-            edges { node { id status createdAt order { restaurant { name } } } }
-            pageInfo { hasNextPage endCursor }
-          }
-        }`,
-        { first: 10, after: pageParam },
-      ),
+    queryFn: ({ pageParam }) => gql(OFFER_HISTORY_QUERY, { first: 10, after: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) =>
       last.myOffers.pageInfo.hasNextPage ? last.myOffers.pageInfo.endCursor : undefined,
@@ -104,12 +197,7 @@ export function DashboardPage() {
     setPosition([lat, lng]);
     setHeading(h);
     if (isOnline) {
-      await gql(
-        `mutation($lat: Float!, $lng: Float!, $heading: Float) {
-          updateDriverLocation(lat: $lat, lng: $lng, heading: $heading) { id }
-        }`,
-        { lat, lng, heading: h },
-      ).catch(console.error);
+      await gql(UPDATE_LOCATION_MUTATION, { lat, lng, heading: h }).catch(console.error);
     }
   }, [isOnline]);
 
@@ -141,7 +229,7 @@ export function DashboardPage() {
       connectionParams: { authorization: `Bearer ${token}` },
     });
     const dispose = client.subscribe(
-      { query: `subscription { driverOfferReceived { id status expiresAt totalDistance estimatedMinutes reward order { id deliveryLat deliveryLng restaurant { name lat lng } } } }` },
+      { query: printDocument(DRIVER_OFFER_SUBSCRIPTION) },
       {
         next: (msg) => {
           const offer = (msg.data as { driverOfferReceived: Offer })?.driverOfferReceived;
@@ -156,10 +244,8 @@ export function DashboardPage() {
 
   useEffect(() => {
     async function loadActive() {
-      const data = await gql<{ myActiveDelivery: ActiveDelivery | null }>(
-        `query { myActiveDelivery { id status order { id status deliveryLat deliveryLng restaurant { name lat lng } } } }`,
-      );
-      setActiveDelivery(data.myActiveDelivery);
+      const data = await gql(ACTIVE_DELIVERY_QUERY);
+      setActiveDelivery(data.myActiveDelivery ?? null);
     }
     loadActive().catch(console.error);
   }, [pendingOffer]);
@@ -187,7 +273,7 @@ export function DashboardPage() {
 
   async function toggleOnline() {
     const next = !isOnline;
-    await gql(`mutation($isOnline: Boolean!) { setDriverOnline(isOnline: $isOnline) { id } }`, { isOnline: next });
+    await gql(SET_ONLINE_MUTATION, { isOnline: next });
     setIsOnline(next);
     if (next) {
       await loadPendingOffer().catch(console.error);
@@ -201,15 +287,10 @@ export function DashboardPage() {
     setResponding(true);
     setOfferError(null);
     try {
-      await gql(
-        `mutation($offerId: ID!, $accept: Boolean!) { respondToOffer(offerId: $offerId, accept: $accept) { id status } }`,
-        { offerId: pendingOffer.id, accept },
-      );
+      await gql(RESPOND_TO_OFFER_MUTATION, { offerId: pendingOffer.id, accept });
       if (accept) {
-        const data = await gql<{ myActiveDelivery: ActiveDelivery | null }>(
-          `query { myActiveDelivery { id status order { id status deliveryLat deliveryLng restaurant { name lat lng } } } }`,
-        );
-        setActiveDelivery(data.myActiveDelivery);
+        const data = await gql(ACTIVE_DELIVERY_QUERY);
+        setActiveDelivery(data.myActiveDelivery ?? null);
       }
       setPendingOffer(null);
     } catch (err) {
@@ -225,20 +306,14 @@ export function DashboardPage() {
 
   async function confirmPickup() {
     if (!activeDelivery) return;
-    await gql(`mutation($deliveryId: ID!) { confirmPickup(deliveryId: $deliveryId) { id status } }`, {
-      deliveryId: activeDelivery.id,
-    });
-    const data = await gql<{ myActiveDelivery: ActiveDelivery | null }>(
-      `query { myActiveDelivery { id status order { id status deliveryLat deliveryLng restaurant { name lat lng } } } }`,
-    );
-    setActiveDelivery(data.myActiveDelivery);
+    await gql(CONFIRM_PICKUP_MUTATION, { deliveryId: activeDelivery.id });
+    const data = await gql(ACTIVE_DELIVERY_QUERY);
+    setActiveDelivery(data.myActiveDelivery ?? null);
   }
 
   async function confirmDelivery() {
     if (!activeDelivery) return;
-    await gql(`mutation($deliveryId: ID!) { confirmDelivery(deliveryId: $deliveryId) { id status } }`, {
-      deliveryId: activeDelivery.id,
-    });
+    await gql(CONFIRM_DELIVERY_MUTATION, { deliveryId: activeDelivery.id });
     setActiveDelivery(null);
     setRoute([]);
   }

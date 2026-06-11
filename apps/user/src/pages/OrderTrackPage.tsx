@@ -2,30 +2,55 @@ import { useEffect, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, Marker, Polyline, TileLayer } from "react-leaflet";
-import { gql, formatPrice, formatStatus, WS_URL, getToken } from "@uber-like/web";
+import { gql, formatPrice, formatStatus, printDocument, WS_URL, getToken } from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
 import { createClient } from "graphql-ws";
 
-interface Order {
-  id: string;
-  status: string;
-  totalAmount: number;
-  deliveryAddress: string;
-  deliveryLat: number;
-  deliveryLng: number;
-  restaurant: { name: string; lat: number; lng: number };
-  delivery?: {
-    id: string;
-    driver?: { id: string; name: string; rating: number; lat: number | null; lng: number | null; heading: number | null };
-  };
-}
-
-const ORDER_QUERY = `query Order($id: ID!) {
-  order(id: $id) {
-    id status totalAmount deliveryAddress deliveryLat deliveryLng
-    restaurant { name lat lng }
-    delivery { id driver { id name rating lat lng heading } }
+const ORDER_QUERY = graphql(`
+  query OrderTrack($id: ID!) {
+    order(id: $id) {
+      id
+      status
+      totalAmount
+      deliveryAddress
+      deliveryLat
+      deliveryLng
+      restaurant {
+        name
+        lat
+        lng
+      }
+      delivery {
+        id
+        driver {
+          id
+          name
+          rating
+          lat
+          lng
+          heading
+        }
+      }
+    }
   }
-}`;
+`);
+
+const ORDER_STATUS_SUBSCRIPTION = graphql(`
+  subscription OrderStatusChanged($orderId: ID!) {
+    orderStatusChanged(orderId: $orderId) {
+      id
+      status
+    }
+  }
+`);
+
+const RATE_DRIVER_MUTATION = graphql(`
+  mutation RateDriver($orderId: ID!, $score: Int!, $comment: String) {
+    rateDriver(orderId: $orderId, score: $score, comment: $comment) {
+      id
+    }
+  }
+`);
 
 export function OrderTrackPage() {
   const { id } = useParams({ from: "/authed/orders/$id" });
@@ -36,7 +61,7 @@ export function OrderTrackPage() {
 
   const { data } = useQuery({
     queryKey: ["order", id],
-    queryFn: () => gql<{ order: Order }>(ORDER_QUERY, { id }),
+    queryFn: () => gql(ORDER_QUERY, { id }),
     refetchInterval: 5000,
   });
 
@@ -49,9 +74,7 @@ export function OrderTrackPage() {
     });
     const dispose = client.subscribe(
       {
-        query: `subscription($orderId: ID!) {
-          orderStatusChanged(orderId: $orderId) { id status delivery { driver { id name rating lat lng heading } } }
-        }`,
+        query: printDocument(ORDER_STATUS_SUBSCRIPTION),
         variables: { orderId: id },
       },
       {
@@ -72,12 +95,7 @@ export function OrderTrackPage() {
     : [order.deliveryLat, order.deliveryLng];
 
   async function handleRate() {
-    await gql(
-      `mutation($orderId: ID!, $score: Int!, $comment: String) {
-        rateDriver(orderId: $orderId, score: $score, comment: $comment) { id }
-      }`,
-      { orderId: id, score, comment },
-    );
+    await gql(RATE_DRIVER_MUTATION, { orderId: id, score, comment });
     setRated(true);
     queryClient.invalidateQueries({ queryKey: ["order", id] });
   }
