@@ -2,6 +2,30 @@ import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { gql, formatPrice } from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
+
+const RESTAURANT_QUERY = graphql(`
+  query RestaurantDetail($id: ID!) {
+    restaurant(id: $id) {
+      id
+      name
+      menuItems {
+        id
+        name
+        price
+        isAvailable
+      }
+    }
+  }
+`);
+
+const CREATE_ORDER_MUTATION = graphql(`
+  mutation CreateOrder($input: CreateOrderInput!) {
+    createOrder(input: $input) {
+      id
+    }
+  }
+`);
 
 export function RestaurantPage() {
   const { id } = useParams({ from: "/authed/restaurant/$id" });
@@ -13,11 +37,7 @@ export function RestaurantPage() {
 
   const { data } = useQuery({
     queryKey: ["restaurant", id],
-    queryFn: () =>
-      gql<{ restaurant: { id: string; name: string; menuItems: Array<{ id: string; name: string; price: number }> } }>(
-        `query($id: ID!) { restaurant(id: $id) { id name menuItems { id name price isAvailable } } }`,
-        { id },
-      ),
+    queryFn: () => gql(RESTAURANT_QUERY, { id }),
   });
 
   const restaurant = data?.restaurant;
@@ -33,20 +53,15 @@ export function RestaurantPage() {
       .map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
     if (items.length === 0) return;
 
-    const result = await gql<{ createOrder: { id: string } }>(
-      `mutation($input: CreateOrderInput!) {
-        createOrder(input: $input) { id }
-      }`,
-      {
-        input: {
-          restaurantId: id,
-          items,
-          deliveryAddress: address,
-          deliveryLat: lat,
-          deliveryLng: lng,
-        },
+    const result = await gql(CREATE_ORDER_MUTATION, {
+      input: {
+        restaurantId: id,
+        items,
+        deliveryAddress: address,
+        deliveryLat: lat,
+        deliveryLng: lng,
       },
-    );
+    });
     navigate({ to: "/orders/$id", params: { id: result.createOrder.id } });
   }
 

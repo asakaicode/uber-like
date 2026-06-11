@@ -1,3 +1,4 @@
+import { GraphQLError } from "graphql";
 import jwt from "jsonwebtoken";
 import type { UserRole } from "@uber-like/database";
 
@@ -9,6 +10,10 @@ export interface JwtPayload {
   customerId?: string;
   restaurantId?: string;
   driverId?: string;
+}
+
+export interface Context {
+  user: JwtPayload | null;
 }
 
 export function signToken(payload: JwtPayload): string {
@@ -25,10 +30,14 @@ export function getTokenFromHeader(authHeader?: string | null): string | null {
 }
 
 export function requireAuth(ctx: { user: JwtPayload | null }): JwtPayload {
-  if (!ctx.user) throw new Error("Unauthorized");
+  if (!ctx.user) {
+    throw new GraphQLError("Unauthorized", { extensions: { code: "UNAUTHENTICATED" } });
+  }
   return ctx.user;
 }
 
 export function requireRole(user: JwtPayload, ...roles: UserRole[]): void {
-  if (!roles.includes(user.role)) throw new Error("Forbidden");
+  if (!roles.includes(user.role)) {
+    throw new GraphQLError("Forbidden", { extensions: { code: "FORBIDDEN" } });
+  }
 }

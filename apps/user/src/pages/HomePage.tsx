@@ -1,20 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { gql, formatPrice } from "@uber-like/web";
+import { graphql } from "@uber-like/web/gql";
 
-interface Restaurant {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  menuItems: Array<{ id: string; name: string; price: number }>;
-}
+const RESTAURANTS_QUERY = graphql(`
+  query Restaurants {
+    restaurants {
+      id
+      name
+      lat
+      lng
+      menuItems {
+        id
+        name
+        price
+      }
+    }
+  }
+`);
 
 export function HomePage() {
   const { data, isLoading } = useQuery({
     queryKey: ["restaurants"],
-    queryFn: () =>
-      gql<{ restaurants: Restaurant[] }>(`query { restaurants { id name lat lng menuItems { id name price } } }`),
+    queryFn: () => gql(RESTAURANTS_QUERY),
   });
 
   if (isLoading) return <div className="spinner">Loading...</div>;

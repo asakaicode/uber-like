@@ -50,6 +50,8 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: cp .env.example .env
+      - run: pnpm codegen
+      - run: git diff --exit-code # 生成物がコミット済みと一致すること
       - run: pnpm db:generate
       - run: pnpm db:push
       - run: pnpm build

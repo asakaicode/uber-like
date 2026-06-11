@@ -1,4 +1,6 @@
 import classNames from "classnames";
+import { print } from "graphql";
+import type { TypedDocumentNode } from "@graphql-typed-document-node/core";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/graphql";
 export const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:4000/graphql";
@@ -25,10 +27,18 @@ export function clearToken(): void {
   localStorage.removeItem("token");
 }
 
-export async function gql<T>(
-  query: string,
-  variables?: Record<string, unknown>,
-): Promise<T> {
+export function logout(): void {
+  clearToken();
+  localStorage.removeItem("restaurantId");
+  localStorage.removeItem("customerId");
+  localStorage.removeItem("driverId");
+  window.location.replace("/login");
+}
+
+export async function gql<TResult, TVariables>(
+  document: TypedDocumentNode<TResult, TVariables>,
+  variables?: TVariables,
+): Promise<TResult> {
   const token = getToken();
   const res = await fetch(API_URL, {
     method: "POST",
@@ -36,11 +46,29 @@ export async function gql<T>(
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ query: print(document), variables }),
   });
-  const json = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
-  if (json.errors?.length) throw new Error(json.errors[0]!.message);
-  return json.data as T;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    data?: TResult;
+    errors?: Array<{ message: string; extensions?: { code?: string } }>;
+  };
+  if (json.errors?.length) {
+    const err = json.errors[0]!;
+    if (err.extensions?.code === "UNAUTHENTICATED") {
+      clearToken();
+      window.location.replace("/login");
+    }
+    throw new Error(err.message);
+  }
+  return json.data as TResult;
+}
+
+/** graphql-ws など文字列クエリが必要な API へ渡すための print。 */
+export function printDocument<TResult, TVariables>(
+  document: TypedDocumentNode<TResult, TVariables>,
+): string {
+  return print(document);
 }
 
 export function formatStatus(status: string): string {
@@ -56,4 +84,9 @@ export function formatDistance(meters: number): string {
 }
 
 export { useInfiniteScroll } from "./useInfiniteScroll";
+export { useSubscription } from "./useSubscription";
+export { getWsClient } from "./ws";
+export { LoginForm } from "./LoginForm";
+export { createAppBootstrap } from "./bootstrap";
 export { classNames };
+export type { ResultOf, VariablesOf } from "@graphql-typed-document-node/core";
